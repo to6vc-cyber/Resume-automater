@@ -213,7 +213,7 @@ Build a completely new resume with these rules:
     /* ── Step 2: Groq call #2 — Markdown → LaTeX ── */
     console.log('📝 Step 2: Converting to LaTeX…');
 
-    const latexTemplate = `\\documentclass[letterpaper,11pt]{article}
+    const latexTemplate = `\\documentclass[letterpaper,10pt]{article}
 
 \\usepackage{latexsym}
 \\usepackage[empty]{fullpage}
@@ -227,11 +227,12 @@ Build a completely new resume with these rules:
 \\usepackage[english]{babel}
 \\usepackage{tabularx}
 \\usepackage{fontawesome5}
-\\usepackage[T1]{fontenc}
+\\usepackage{fontspec}
 
 \\definecolor{light-grey}{gray}{0.83}
 \\definecolor{dark-grey}{gray}{0.3}
 \\definecolor{text-grey}{gray}{.08}
+\\definecolor{accent-blue}{HTML}{1F3A5F}
 
 \\pagestyle{fancy}
 \\fancyhf{}
@@ -239,67 +240,75 @@ Build a completely new resume with these rules:
 \\renewcommand{\\headrulewidth}{0pt}
 \\renewcommand{\\footrulewidth}{0pt}
 
-\\addtolength{\\oddsidemargin}{-0.5in}
-\\addtolength{\\evensidemargin}{0in}
-\\addtolength{\\textwidth}{1in}
-\\addtolength{\\topmargin}{-.5in}
-\\addtolength{\\textheight}{1.0in}
+\\addtolength{\\oddsidemargin}{-0.35in}
+\\addtolength{\\evensidemargin}{-0.35in}
+\\addtolength{\\textwidth}{0.7in}
+\\addtolength{\\topmargin}{-0.45in}
+\\addtolength{\\textheight}{0.9in}
 
 \\urlstyle{same}
 \\raggedbottom
 \\raggedright
 \\setlength{\\tabcolsep}{0in}
+\\setlength{\\parindent}{0pt}
+\\setlength{\\parskip}{2pt}
+\\setlist[itemize]{leftmargin=0.2in, topsep=2pt, itemsep=1.5pt, parsep=0pt, partopsep=0pt}
+\\IfFontExistsTF{Times New Roman}{
+  \\setmainfont{Times New Roman}
+}{
+  \\setmainfont{TeX Gyre Termes}
+}
 
 \\titleformat{\\section}{
-    \\bfseries \\vspace{2pt} \\raggedright \\large
-}{}{0em}{}[\\color{light-grey} {\\titlerule[2pt]} \\vspace{-4pt}]
+  \\bfseries \\raggedright \\normalsize\\color{accent-blue}
+}{}{0em}{\\MakeUppercase}[\\color{light-grey} {\\titlerule[0.8pt]} \\vspace{-2pt}]
+\\titlespacing{\\section}{0pt}{9pt}{3pt}
 
-\\newcommand{\\resumeItem}[1]{\\item\\small{{#1 \\vspace{-1pt}}}}
+\\newcommand{\\resumeSection}[2]{\\section{\\faIcon{#1}\\hspace{6pt}#2}}
+
+\\newcommand{\\resumeItem}[1]{\\item\\small{#1}}
 
 \\newcommand{\\resumeSubheading}[4]{
-  \\vspace{-1pt}\\item
+  \\item\\vspace{1pt}
     \\begin{tabular*}{\\textwidth}[t]{l@{\\extracolsep{\\fill}}r}
-      \\textbf{#1} & {\\color{dark-grey}\\small #2}\\vspace{1pt}\\\\
-      \\textit{#3} & {\\color{dark-grey} \\small #4}\\\\
-    \\end{tabular*}\\vspace{-4pt}
+      \\textbf{\\normalsize #1} & {\\color{dark-grey}\\footnotesize \\faCalendarAlt\\ #2}\\\\
+      {\\textit{\\small #3}} & {\\color{dark-grey} \\footnotesize \\faMapMarkerAlt\\ #4}\\\\
+    \\end{tabular*}\\vspace{-2pt}
 }
 
 \\newcommand{\\resumeProjectHeading}[2]{
-    \\item
+    \\item\\vspace{1pt}
     \\begin{tabular*}{\\textwidth}{l@{\\extracolsep{\\fill}}r}
-      #1 & {\\color{dark-grey}} \\\\
-    \\end{tabular*}\\vspace{-4pt}
+      \\textbf{\\small #1} & {\\color{dark-grey}\\footnotesize #2} \\\\
+    \\end{tabular*}\\vspace{-2pt}
 }
 
-\\newcommand{\\resumeSubItem}[1]{\\resumeItem{#1}\\vspace{-4pt}}
+\\newcommand{\\resumeSubItem}[1]{\\resumeItem{#1}}
 \\renewcommand\\labelitemii{$\\vcenter{\\hbox{\\tiny$\\bullet$}}$}
 
-\\newcommand{\\resumeSubHeadingListStart}{\\begin{itemize}[leftmargin=0in, label={}]}
-\\newcommand{\\resumeSubHeadingListEnd}{\\end{itemize}}
-\\newcommand{\\resumeItemListStart}{\\begin{itemize}}
-\\newcommand{\\resumeItemListEnd}{\\end{itemize}\\vspace{0pt}}
+\\newcommand{\\resumeSubHeadingListStart}{\\begin{itemize}[leftmargin=0in, label={}, itemsep=2pt]}
+\\newcommand{\\resumeSubHeadingListEnd}{\\end{itemize}\\vspace{-1pt}}
+\\newcommand{\\resumeItemListStart}{\\begin{itemize}[leftmargin=0.2in, itemsep=2pt]}
+\\newcommand{\\resumeItemListEnd}{\\end{itemize}\\vspace{-1pt}}
 
 \\color{text-grey}
 
 \\begin{document}
 \\begin{center}
-    \\textbf{\\Huge FULL NAME} \\\\ \\vspace{5pt}
-    \\small \\texttt{PHONE} \\hspace{1pt} $|$
-    \\hspace{1pt} \\texttt{EMAIL} \\hspace{1pt} $|$
-    \\hspace{1pt} \\texttt{LINKEDIN} \\hspace{1pt} $|$
-    \\hspace{1pt} \\texttt{GITHUB}
-    \\\\ \\vspace{-3pt}
+  {\\fontsize{19}{22}\\selectfont\\textbf{FULL NAME}} \\\\ \\vspace{3pt}
+  \\small \\faPhone\\ PHONE \\hspace{4pt} $|$ \\hspace{4pt} \\faEnvelope\\ EMAIL \\hspace{4pt} $|$ \\hspace{4pt} \\faLinkedin\\ LINKEDIN \\hspace{4pt} $|$ \\hspace{4pt} \\faGithub\\ GITHUB
+  \\\\ \\vspace{2pt}
 \\end{center}
 
-\\section{SUMMARY}
-One-line summary here.
+\\resumeSection{file-alt}{SUMMARY}
+\\small One-line summary here.
 
-\\section{EDUCATION}
+\\resumeSection{graduation-cap}{EDUCATION}
   \\resumeSubHeadingListStart
     \\resumeSubheading{University}{Dates}{Degree}{Location}
   \\resumeSubHeadingListEnd
 
-\\section{EXPERIENCE}
+\\resumeSection{briefcase}{EXPERIENCE}
   \\resumeSubHeadingListStart
     \\resumeSubheading{Company}{Dates}{Title}{Location}
       \\resumeItemListStart
@@ -309,7 +318,7 @@ One-line summary here.
       \\resumeItemListEnd
   \\resumeSubHeadingListEnd
 
-\\section{PROJECTS}
+\\resumeSection{diagram-project}{PROJECTS}
     \\resumeSubHeadingListStart
       \\resumeProjectHeading{\\textbf{Project Title}}{}
           \\resumeItemListStart
@@ -317,19 +326,19 @@ One-line summary here.
           \\resumeItemListEnd
     \\resumeSubHeadingListEnd
 
-\\section{SKILLS}
+\\resumeSection{code}{SKILLS}
  \\begin{itemize}[leftmargin=0in, label={}]
-    \\small{\\item{
+   \\item{\\small
      \\textbf{Category}{: skills} \\\\
      \\textbf{Category}{: skills}
-    }}
+   }
  \\end{itemize}
 
-\\section{ACHIEVEMENTS}
+\\resumeSection{award}{ACHIEVEMENTS}
  \\begin{itemize}[leftmargin=0in, label={}]
-    \\small{\\item{
+   \\item{\\small
      \\textbf{Achievement}{: detail}
-    }}
+   }
  \\end{itemize}
 
 \\end{document}`;
@@ -342,7 +351,7 @@ ${markdownResume}
 RULES:
 1. Use ONLY the template structure below — do not add any packages or commands.
 2. Fill in the content from the resume. Escape all LaTeX special characters in resume text: & % $ # _ { } ~ ^ \\.
-3. Do NOT use fontawesome icon commands such as \\faPhone, \\faEnvelope, \\faLinkedin, or \\faGithub.
+3. Keep template icons as-is. Do NOT add extra icon commands beyond those already in the template.
 4. Do NOT use raw markdown markers such as **, ###, backticks, or bullet characters outside itemize.
 5. Use plain ASCII punctuation only. Convert smart quotes to straight quotes and en/em dashes to --.
 6. Summary must be 1 line. Each job: max 3 bullets. Keep only 1 project.
@@ -364,7 +373,7 @@ ${latexTemplate}`;
       throw new Error('Groq returned empty LaTeX code.');
     }
 
-    // Robust cleanup: strip fences and normalize punctuation that can break pdflatex.
+    // Robust cleanup: strip fences and normalize punctuation that can break compilation.
     latexCode = normalizeGeneratedLatex(latexCode);
 
     // Extract only the LaTeX document (from \documentclass to \end{document})
@@ -373,12 +382,7 @@ ${latexTemplate}`;
       latexCode = docMatch[1].trim();
     }
 
-    // Remove common icon commands from model output. Plain text is more reliable for pdflatex.
-    latexCode = latexCode
-      .replace(/\\faPhone\\?\s*/g, '')
-      .replace(/\\faEnvelope\\?\s*/g, '')
-      .replace(/\\faLinkedin\\?\s*/g, '')
-      .replace(/\\faGithub\\?\s*/g, '');
+    // Keep template icons for a polished, professional header and location line.
 
     // Safety: ensure it starts with \documentclass
     if (!latexCode.includes('\\documentclass')) {
@@ -433,7 +437,7 @@ ${latexTemplate}`;
       new URLSearchParams({
         _csrf: csrfToken,
         snip: latexCode,
-        engine: 'pdflatex',
+        engine: 'xelatex',
       }).toString(),
       {
         headers: {
