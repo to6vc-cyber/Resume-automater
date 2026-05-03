@@ -51,13 +51,11 @@ if (!GROQ_API_KEY && !GEMINI_API_KEY) {
   logError('❌ Neither GROQ_API_KEY nor GEMINI_API_KEY is set.');
   process.exit(1);
 }
-if (!OVERLEAF_SESSION_COOKIE_RAW) {
-  logError('❌ OVERLEAF_SESSION_COOKIE is not set.');
-  process.exit(1);
-}
-if (!OVERLEAF_GCLB_TOKEN_RAW) {
-  logError('❌ OVERLEAF_GCLB_TOKEN is not set.');
-  process.exit(1);
+
+// Overleaf is optional - app can work without it
+const OVERLEAF_AVAILABLE = !!(OVERLEAF_SESSION_COOKIE_RAW && OVERLEAF_GCLB_TOKEN_RAW);
+if (!OVERLEAF_AVAILABLE) {
+  log('⚠️ Overleaf credentials not set. PDF compilation will be skipped. Set OVERLEAF_SESSION_COOKIE and OVERLEAF_GCLB_TOKEN to enable PDF export.');
 }
 
 /* ─── LLM Clients ─── */
@@ -460,6 +458,10 @@ app.post('/api/generate', async (req, res) => {
     });
   }
 
+  // Declare variables at function level so they're accessible in all catch blocks
+  let latexCode = null;
+  let markdownResume = null;
+
   try {
     /* ── Step 1: Groq call #1 — ATS Resume Rewriter ── */
     log('📝 Step 1: Calling LLM for ATS resume rewrite…');
@@ -570,7 +572,7 @@ Build a completely new resume with these rules:
 * Do NOT miss important keywords from the job description.
 * Do NOT keyword-stuff unnaturally — maintain readability.`;
 
-    const markdownResume = await callLLM(step1Prompt);
+    markdownResume = await callLLM(step1Prompt);
 
     if (!markdownResume) {
       throw new Error('Groq returned an empty resume.');
@@ -580,47 +582,63 @@ Build a completely new resume with these rules:
 
     /* ── Step 2: Deterministic Markdown → LaTeX ── */
     log('📝 Step 2: Rendering safe LaTeX…');
-    const latexCode = buildLatexResume(markdownResume);
+    latexCode = buildLatexResume(markdownResume);
 
     log('✅ Step 2 complete — LaTeX generated.');
     log(`   LaTeX length: ${latexCode.length} chars`);
 
-    /* ── Step 3: Decode Overleaf session cookie ── */
-    log('🔑 Step 3: Decoding Overleaf credentials…');
-
-    const SESSION_COOKIE = decodeURIComponent(OVERLEAF_SESSION_COOKIE_RAW);
-    const GCLB_TOKEN = OVERLEAF_GCLB_TOKEN_RAW;
-
-    const cookieStr = `overleaf_session2=${SESSION_COOKIE}; GCLB=${GCLB_TOKEN}`;
-
-    log('✅ Step 3 complete.');
-
-    /* ── Step 4: GET /project to fetch CSRF token ── */
-    log('🔐 Step 4: Fetching Overleaf CSRF token…');
-
-    const csrfResponse = await axios.get('https://www.overleaf.com/project', {
-      headers: {
-        'User-Agent': UA,
-        Cookie: cookieStr,
-      },
-      maxRedirects: 5,
-      validateStatus: (s) => s < 400,
-    });
-
-    const html = typeof csrfResponse.data === 'string' ? csrfResponse.data : '';
-
-    const csrfMatch =
-      html.match(/name="ol-csrfToken" content="([^"]+)"/) ||
-      html.match(/content="([^"]+)" name="ol-csrfToken"/);
-
-    if (!csrfMatch) {
-      throw new Error(
-        'Could not extract CSRF token from Overleaf. Your session cookie may have expired.'
-      );
+    /* ── Step 3 onwards: Optional Overleaf PDF Compilation ── */
+    if (!OVERLEAF_AVAILABLE) {
+      log('⚠️ Overleaf credentials not available. Returning LaTeX only (no PDF).');
+      return res.json({
+        status: 'success',
+        message: 'Resume generated successfully! PDF compilation skipped (Overleaf credentials not configured).',
+        pdfBase64: null,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode,
+        markdownResume,
+      });
     }
 
-    const csrfToken = csrfMatch[1];
-    log('✅ Step 4 complete — CSRF token obtained.');
+    // Try to compile to PDF, but don't fail if Overleaf has issues
+    try {
+      /* ── Step 3: Decode Overleaf session cookie ── */
+      log('🔑 Step 3: Decoding Overleaf credentials…');
+
+      const SESSION_COOKIE = decodeURIComponent(OVERLEAF_SESSION_COOKIE_RAW);
+      const GCLB_TOKEN = OVERLEAF_GCLB_TOKEN_RAW;
+
+      const cookieStr = `overleaf_session2=${SESSION_COOKIE}; GCLB=${GCLB_TOKEN}`;
+
+      log('✅ Step 3 complete.');
+
+      /* ── Step 4: GET /project to fetch CSRF token ── */
+      log('🔐 Step 4: Fetching Overleaf CSRF token…');
+
+      const csrfResponse = await axios.get('https://www.overleaf.com/project', {
+        headers: {
+          'User-Agent': UA,
+          Cookie: cookieStr,
+        },
+        maxRedirects: 5,
+        validateStatus: (s) => s < 400,
+      });
+
+      const html = typeof csrfResponse.data === 'string' ? csrfResponse.data : '';
+
+      const csrfMatch =
+        html.match(/name="ol-csrfToken" content="([^"]+)"/) ||
+        html.match(/content="([^"]+)" name="ol-csrfToken"/);
+
+      if (!csrfMatch) {
+        throw new Error(
+          'Could not extract CSRF token from Overleaf. Your session cookie may have expired.'
+        );
+      }
+
+      const csrfToken = csrfMatch[1];
+      log('✅ Step 4 complete — CSRF token obtained.');
 
     /* ── Step 5: POST /docs to create project ── */
     log('📤 Step 5: Creating Overleaf project…');
@@ -700,47 +718,103 @@ Build a completely new resume with these rules:
 
     const projectUrl = `https://www.overleaf.com/project/${projectId}`;
 
+    let pdfBase64 = null;
+    let pdfUrl = null;
+
     if (!pdfFile) {
       const diagnostics = extractCompileDiagnostics(compileData);
-      logError('❌ Overleaf compile failed:', diagnostics);
+      logError('⚠️ Overleaf compile failed:', diagnostics);
+      log('📄 Returning resume without PDF (Overleaf compilation failed)');
+    } else {
+      try {
+        pdfUrl = 'https://www.overleaf.com' + pdfFile.url;
+        log('✅ Step 6 complete — PDF compiled.');
 
-      return res.status(200).json({
-        status: 'error',
-        message: `PDF compilation failed. ${diagnostics} Open the project in Overleaf to view the full logs: ${projectUrl}`,
-        projectUrl,
-        diagnostics,
-      });
+        /* ── Step 7: Download the PDF ── */
+        log('📥 Step 7: Downloading compiled PDF…');
+
+        const pdfResponse = await axios.get(pdfUrl, {
+          headers: {
+            Cookie: cookieStr,
+            'User-Agent': UA,
+          },
+          responseType: 'arraybuffer',
+        });
+
+        pdfBase64 = Buffer.from(pdfResponse.data).toString('base64');
+        log('✅ Step 7 complete — PDF downloaded and encoded.');
+      } catch (pdfErr) {
+        logError('⚠️ Failed to download PDF:', pdfErr.message);
+        log('📄 Returning resume without PDF');
+        pdfBase64 = null;
+        pdfUrl = null;
+      }
     }
 
-    const pdfUrl = 'https://www.overleaf.com' + pdfFile.url;
-    log('✅ Step 6 complete — PDF compiled.');
-
-    /* ── Step 7: Download the PDF ── */
-    log('📥 Step 7: Downloading compiled PDF…');
-
-    const pdfResponse = await axios.get(pdfUrl, {
-      headers: {
-        Cookie: cookieStr,
-        'User-Agent': UA,
-      },
-      responseType: 'arraybuffer',
-    });
-
-    const pdfBase64 = Buffer.from(pdfResponse.data).toString('base64');
-    log('✅ Step 7 complete — PDF downloaded and encoded.');
-
-    /* ── Return success ── */
+    /* ── Return success (with or without PDF) ── */
     return res.json({
       status: 'success',
-      projectUrl,
-      pdfUrl,
-      pdfBase64,
+      projectUrl: pdfFile ? projectUrl : null,
+      pdfUrl: pdfUrl,
+      pdfBase64: pdfBase64,
+      message: pdfBase64 ? '✅ Resume generated with PDF' : '⚠️ Resume generated (PDF compilation skipped or failed)',
+      latexCode: latexCode,
+      markdownResume: markdownResume,
     });
+    } catch (overleafErr) {
+      logError('⚠️ Overleaf PDF compilation failed:', overleafErr.message);
+      log('📄 Returning resume without PDF (Overleaf unavailable or credentials expired)');
+      
+      // Return success but without PDF
+      return res.json({
+        status: 'success',
+        message: '✅ Resume generated! PDF compilation skipped (Overleaf unavailable). Your resume markdown/LaTeX is ready.',
+        pdfBase64: null,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode,
+        markdownResume,
+      });
+    }
   } catch (err) {
     logError('❌ Error:', err.message);
-    return res.status(500).json({
+    log('📄 Returning error response but keeping server alive');
+    
+    // If we at least have LaTeX, return it
+    if (latexCode) {
+      return res.status(200).json({
+        status: 'partial',
+        message: `✅ Resume generated! Error during PDF compilation: ${err.message}`,
+        pdfBase64: null,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode: latexCode,
+        markdownResume: markdownResume,
+      });
+    }
+    
+    // If we have markdown but no LaTeX, return markdown
+    if (markdownResume) {
+      return res.status(200).json({
+        status: 'partial',
+        message: `✅ Resume content generated! Error building LaTeX: ${err.message}`,
+        pdfBase64: null,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode: null,
+        markdownResume: markdownResume,
+      });
+    }
+    
+    // No output at all - show error
+    return res.status(200).json({
       status: 'error',
-      message: err.message || 'An unexpected error occurred.',
+      message: `Failed to generate resume: ${err.message}. Please check your inputs and try again.`,
+      pdfBase64: null,
+      projectUrl: null,
+      pdfUrl: null,
+      latexCode: null,
+      markdownResume: null,
     });
   }
 });

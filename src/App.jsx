@@ -163,6 +163,29 @@ export default function App() {
     URL.revokeObjectURL(url)
   }
 
+  const handleDownloadLatex = () => {
+    if (!result?.latexCode) return
+    const blob = new Blob([result.latexCode], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'tailored_resume.tex'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadMarkdown = () => {
+    if (!result?.markdownResume) return
+    const blob = new Blob([result.markdownResume], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'tailored_resume.md'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+
   return (
     <div className="app-shell">
       <nav className="topbar">
@@ -307,17 +330,36 @@ export default function App() {
                 </div>
                 <div>
                   <h3>Your tailored resume is ready</h3>
-                  <p>Download the finished PDF or open the Overleaf project.</p>
+                  <p>{result.message || 'Download the finished PDF or open the Overleaf project.'}</p>
                 </div>
                 <div className="result-actions">
-                  <button id="download-pdf-btn" type="button" onClick={handleDownload} className="primary-button compact">
-                    <DownloadIcon size={17} />
-                    Download PDF
-                  </button>
-                  <a id="overleaf-link" href={result.projectUrl} target="_blank" rel="noopener noreferrer" className="secondary-button">
-                    Open Overleaf
-                    <ExternalIcon size={15} />
-                  </a>
+                  {result.pdfBase64 ? (
+                    <button id="download-pdf-btn" type="button" onClick={handleDownload} className="primary-button compact">
+                      <DownloadIcon size={17} />
+                      Download PDF
+                    </button>
+                  ) : result.latexCode ? (
+                    <button id="download-latex-btn" type="button" onClick={handleDownloadLatex} className="primary-button compact">
+                      <DownloadIcon size={17} />
+                      Download LaTeX
+                    </button>
+                  ) : result.markdownResume ? (
+                    <button id="download-markdown-btn" type="button" onClick={handleDownloadMarkdown} className="primary-button compact">
+                      <DownloadIcon size={17} />
+                      Download Markdown
+                    </button>
+                  ) : (
+                    <button type="button" disabled title="No output available" className="primary-button compact" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                      <DownloadIcon size={17} />
+                      No output
+                    </button>
+                  )}
+                  {result.projectUrl ? (
+                    <a id="overleaf-link" href={result.projectUrl} target="_blank" rel="noopener noreferrer" className="secondary-button">
+                      Open Overleaf
+                      <ExternalIcon size={15} />
+                    </a>
+                  ) : null}
                 </div>
               </div>
             )}
