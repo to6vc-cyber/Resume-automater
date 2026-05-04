@@ -143,6 +143,93 @@ const isQuotaError = (error) => {
 };
 
 /* ─── Multi-Provider LLM Call with Smart Fallback ─── */
+const callLLM = async (prompt) => {
+  const errors = {};
+  let groqFailed = false;
+
+  if (groq) {
+    try {
+      log('🔄 Attempting Groq API call…');
+      const result = await groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 4096,
+        temperature: 0.7,
+      });
+      const content = result.choices[0]?.message?.content;
+      if (content) {
+        log('✅ Groq API call successful.');
+        lastUsedProvider = 'groq';
+        return content;
+      }
+    } catch (groqError) {
+      groqFailed = true;
+      errors.groq = groqError;
+      const errorStr = JSON.stringify({
+        status: groqError.status,
+        message: groqError.message,
+        type: groqError.type,
+        code: groqError.code,
+      });
+      logError('❌ Groq API failed:');
+      logError(`   ${errorStr}`);
+      log('\n🔄 Switching to Gemini provider…\n');
+    }
+  } else {
+    log('⚠️ Groq client not initialized (GROQ_API_KEY missing)');
+  }
+
+  if (groqFailed || !groq) {
+    if (GEMINI_API_KEY) {
+      try {
+        log('🔄 Attempting Gemini API call…');
+        const geminiPayload = { contents: [{ parts: [{ text: prompt }] }] };
+
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+          geminiPayload,
+          { headers: { 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }
+        );
+
+        if (response.status >= 400) {
+          const errMsg = JSON.stringify(response.data, null, 2);
+          logError(`   ❌ HTTP Error ${response.status}`);
+          logError(`   Error response: ${errMsg}`);
+          throw new Error(`Gemini HTTP ${response.status}: ${errMsg}`);
+        }
+
+        const textContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (textContent) {
+          log('✅ Gemini API call successful.');
+          lastUsedProvider = 'gemini';
+          return textContent;
+        }
+
+        logError('   ❌ No text content in Gemini response');
+        logError(`   Full response: ${JSON.stringify(response.data)}`);
+        throw new Error('Gemini returned empty response');
+      } catch (geminiError) {
+        errors.gemini = geminiError;
+        logError('❌ Gemini API failed:');
+        logError(`   Error: ${geminiError.message}`);
+        logError(`   Stack: ${geminiError.stack}`);
+      }
+    } else {
+      logError('❌ Gemini API key not configured. Cannot fallback from Groq.');
+      errors.gemini = new Error('GEMINI_API_KEY not configured');
+    }
+  }
+
+  logError('\n❌ BOTH providers failed:');
+  logError('   Groq error:', errors.groq?.message || 'No error captured');
+  logError('   Gemini error:', errors.gemini?.message || 'No error captured');
+  logError('\n📋 Diagnostics:');
+  logError(`   Groq configured: ${!!groq}`);
+  logError(`   Gemini configured: ${!!GEMINI_API_KEY}`);
+  logError(`   Groq failed: ${groqFailed}`);
+  throw new Error('Both LLM providers failed. Check API keys, quotas, and network.');
+};
+
 const buildLatexResume = (markdownResume) => {
   const { name, contact, sections } = parseResumeMarkdown(markdownResume);
   const contactLine = contact.length
@@ -447,88 +534,7 @@ const renderSection = (icon, title, items) => {
 ${body}`;
 };
 
-const buildLatexResume = (markdownResume) => {
-  const { name, contact, sections } = parseResumeMarkdown(markdownResume);
-  const contactLine = contact.length
-    ? contact.map((part) => escapeLatex(part)).join(' \\textbar\\ ')
-    : '';
 
-  const summary = sections.SUMMARY.length
-    ? `\\sectiontitle{SUMMARY}
-\\small ${escapeLatex(sections.SUMMARY.join(' '))}`
-    : '';
-
-  const renderedSections = [
-    summary,
-    renderSection('graduation-cap', 'EDUCATION', sections.EDUCATION),
-    renderSection('briefcase', 'EXPERIENCE', sections.EXPERIENCE),
-    renderSection('project-diagram', 'PROJECTS', sections.PROJECTS.slice(0, 8)),
-    renderSection('code', 'SKILLS', sections.SKILLS),
-    renderSection('award', 'ACHIEVEMENTS', sections.ACHIEVEMENTS),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-
-  return `\\documentclass[letterpaper,11pt]{article}
-
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[english]{babel}
-\\usepackage{latexsym}
-\\usepackage[empty]{fullpage}
-\\usepackage{titlesec}
-\\usepackage{xcolor}
-\\usepackage{enumitem}
-\\usepackage[hidelinks]{hyperref}
-\\usepackage{fancyhdr}
-
-\\definecolor{darkblue}{RGB}{31, 58, 95}
-\\definecolor{lightgrey}{gray}{0.92}
-
-\\pagestyle{fancy}
-\\fancyhf{}
-\\renewcommand{\\headrulewidth}{0pt}
-\\renewcommand{\\footrulewidth}{0pt}
-
-\\setlength{\\oddsidemargin}{-0.5in}
-\\setlength{\\evensidemargin}{-0.5in}
-\\setlength{\\textwidth}{7.5in}
-\\setlength{\\topmargin}{-0.5in}
-\\setlength{\\textheight}{10in}
-
-\\urlstyle{same}
-\\raggedbottom
-\\raggedright
-\\setlength{\\tabcolsep}{0in}
-\\setlength{\\parindent}{0pt}
-\\setlength{\\parskip}{2pt}
-
-\\titleformat{\\section}[block]{
-  \\vspace{-8pt}
-  \\raggedright
-  \\large
-  \\bfseries
-  \\color{darkblue}
-}{}{0pt}{}{\\vspace{-4pt}}
-
-\\titlespacing{\\section}{0pt}{10pt}{4pt}
-
-\\newcommand{\\sectiontitle}[1]{\\section{\\MakeUppercase{#1}}}
-\\newcommand{\\resumeItem}[1]{\\item \\small{#1}}
-
-\\color{black}
-
-\\begin{document}
-
-\\begin{center}
-{\\Large \\textbf{${escapeLatex(name)}}}\\\\[3pt]
-${contactLine ? `{\\small ${contactLine}}\\\\[2pt]` : ''}
-\\end{center}
-
-${renderedSections || '\\sectiontitle{Summary}\n\\small Tailored resume content was generated successfully.'}
-
-\\end{document}`;
-};
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    POST /api/generate
