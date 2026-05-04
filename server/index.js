@@ -147,6 +147,7 @@ const callLLM = async (prompt) => {
   const errors = {};
   let groqFailed = false;
 
+  // Try Groq first
   if (groq) {
     try {
       log('🔄 Attempting Groq API call…');
@@ -169,28 +170,45 @@ const callLLM = async (prompt) => {
         status: groqError.status,
         message: groqError.message,
         type: groqError.type,
-        code: groqError.code,
+        code: groqError.code
       });
-      logError('❌ Groq API failed:');
+      logError(`❌ Groq API failed:`);
       logError(`   ${errorStr}`);
-      log('\n🔄 Switching to Gemini provider…\n');
+      log(`\n🔄 Switching to Gemini provider…\n`);
     }
   } else {
     log('⚠️ Groq client not initialized (GROQ_API_KEY missing)');
   }
 
+  // Fall back to Gemini (guaranteed if Groq failed or not available)
   if (groqFailed || !groq) {
     if (GEMINI_API_KEY) {
       try {
         log('🔄 Attempting Gemini API call…');
-        const geminiPayload = { contents: [{ parts: [{ text: prompt }] }] };
+        log(`   Key: ${GEMINI_API_KEY.substring(0, 20)}...`);
+        log(`   Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent`);
+        
+        const geminiPayload = {
+          contents: [{
+            parts: [{ text: prompt }]
+          }]
+        };
 
         const response = await axios.post(
           `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
           geminiPayload,
-          { headers: { 'Content-Type': 'application/json' }, timeout: 30000, validateStatus: () => true }
+          {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 30000,
+            validateStatus: () => true // Don't throw on any status
+          }
         );
 
+        log(`   Response status: ${response.status}`);
+        log(`   Response headers: ${JSON.stringify(response.headers, null, 2)}`);
+        log(`   Response data: ${JSON.stringify(response.data, null, 2)}`);
+
+        // Check for Gemini API errors
         if (response.status >= 400) {
           const errMsg = JSON.stringify(response.data, null, 2);
           logError(`   ❌ HTTP Error ${response.status}`);
@@ -204,143 +222,9 @@ const callLLM = async (prompt) => {
           lastUsedProvider = 'gemini';
           return textContent;
         }
-
+        
         logError('   ❌ No text content in Gemini response');
         logError(`   Full response: ${JSON.stringify(response.data)}`);
-        throw new Error('Gemini returned empty response');
-      } catch (geminiError) {
-        errors.gemini = geminiError;
-        logError('❌ Gemini API failed:');
-        logError(`   Error: ${geminiError.message}`);
-        logError(`   Stack: ${geminiError.stack}`);
-      }
-    } else {
-      logError('❌ Gemini API key not configured. Cannot fallback from Groq.');
-      errors.gemini = new Error('GEMINI_API_KEY not configured');
-    }
-  }
-
-  logError('\n❌ BOTH providers failed:');
-  logError('   Groq error:', errors.groq?.message || 'No error captured');
-  logError('   Gemini error:', errors.gemini?.message || 'No error captured');
-  logError('\n📋 Diagnostics:');
-  logError(`   Groq configured: ${!!groq}`);
-  logError(`   Gemini configured: ${!!GEMINI_API_KEY}`);
-  logError(`   Groq failed: ${groqFailed}`);
-  throw new Error('Both LLM providers failed. Check API keys, quotas, and network.');
-};
-
-const buildLatexResume = (markdownResume) => {
-  const { name, contact, sections } = parseResumeMarkdown(markdownResume);
-  const contactLine = contact.length
-    ? contact.map((part) => escapeLatex(part)).join(' \\quad | \\quad ')
-    : '';
-
-  const summaryText = sections.SUMMARY.length
-    ? escapeLatex(sections.SUMMARY.join(' '))
-    : '';
-
-  const skillsText = sections.SKILLS.length
-    ? escapeLatex(sections.SKILLS.join(', '))
-    : '';
-
-  const experienceBlock = renderItemList(sections.EXPERIENCE);
-  const projectsBlock = renderItemList(sections.PROJECTS);
-  const educationBlock = renderItemList(sections.EDUCATION);
-  const additionalBlock = renderItemList(sections.ACHIEVEMENTS);
-
-  return `\\documentclass[a4paper,10pt]{article}
-
-\\usepackage[left=0.7in,right=0.7in,top=0.6in,bottom=0.6in]{geometry}
-\\usepackage{enumitem}
-\\usepackage{titlesec}
-\\usepackage{hyperref}
-\\usepackage{xcolor}
-
-% ---------- FONT ----------
-\\usepackage{helvet}
-\\renewcommand{\\familydefault}{\\sfdefault}
-
-% ---------- SECTION STYLE ----------
-\\titleformat{\\section}{
-  \\large\\bfseries\\uppercase
-}{}{0em}{}[\\titlerule]
-
-% ---------- CUSTOM COMMANDS ----------
-\\newcommand{\\resumeItem}[1]{
-  \\item \\small{#1}
-}
-
-\\newcommand{\\resumeSubheading}[4]{
-  \\vspace{2pt}
-  \\textbf{#1} \\hfill {\\small #2} \\\\\\ 
-  \\textit{\\small #3} \\hfill \\textit{\\small #4} \\\\\\ 
-}
-
-\\newcommand{\\resumeProject}[2]{
-  \\textbf{#1} \\hfill {\\small #2} \\\\\\ 
-}
-
-\\setlist[itemize]{noitemsep, topsep=0pt}
-
-\\begin{document}
-
-% ---------- HEADER ----------
-\\begin{center}
-    {\\LARGE \\textbf{${escapeLatex(name)}}} \\\\\\ 
-    \\vspace{4pt}
-    \\small
-    ${contactLine}
-\\end{center}
-
-\\vspace{-8pt}
-
-% ---------- SUMMARY ----------
-\\section*{Summary}
-\\small{
-${summaryText || 'A short 2--3 line professional summary. Keep it clean and impactful.'}
-}
-
-% ---------- SKILLS ----------
-\\section*{Skills}
-\\small{
-${skillsText || '\\textbf{Languages:} Skill1, Skill2, Skill3 \\\\ \textbf{Tools:} Tool1, Tool2, Tool3'}
-}
-
-% ---------- EXPERIENCE ----------
-\\section*{Experience}
-
-${experienceBlock || `\\begin{itemize}
-\\resumeItem{Achievement or responsibility written in one line}
-\\resumeItem{Use action verbs and measurable results}
-\\resumeItem{Keep it concise and impactful}
-\\end{itemize}`}
-
-% ---------- PROJECTS ----------
-\\section*{Projects}
-
-${projectsBlock || `\\resumeProject{Project Name}{Tech Stack}
-\\begin{itemize}
-\\resumeItem{What you built}
-\\resumeItem{What problem it solves}
-\\resumeItem{Any result or outcome}
-\\end{itemize}`}
-
-% ---------- EDUCATION ----------
-\\section*{Education}
-
-${educationBlock || `\\resumeSubheading
-{College Name}{Year}
-{Degree}{Location}`}
-
-% ---------- EXTRA ----------
-\\section*{Additional Information}
-\\small{
-${additionalBlock || 'Certifications, achievements, or anything extra.'}
-}
-
-\\end{document}`;
-};
         throw new Error('Gemini returned empty response');
       } catch (geminiError) {
         errors.gemini = geminiError;
@@ -534,7 +418,114 @@ const renderSection = (icon, title, items) => {
 ${body}`;
 };
 
+const buildLatexResume = (markdownResume) => {
+  const { name, contact, sections } = parseResumeMarkdown(markdownResume);
+  const contactLine = contact.length
+    ? contact.map((part) => escapeLatex(part)).join(' \\quad | \\quad ')
+    : '';
 
+  const summaryText = sections.SUMMARY.length
+    ? escapeLatex(sections.SUMMARY.join(' '))
+    : 'A short 2--3 line professional summary. Keep it clean and impactful.';
+
+  const skillsText = sections.SKILLS.length
+    ? sections.SKILLS.map((item) => escapeLatex(item)).join(', ')
+    : 'Skill1, Skill2, Skill3';
+
+  const experienceItems = sections.EXPERIENCE.length
+    ? sections.EXPERIENCE.map((item) => escapeLatex(item))
+    : ['Achievement or responsibility written in one line', 'Use action verbs and measurable results', 'Keep it concise and impactful'];
+
+  const projectItems = sections.PROJECTS.length
+    ? sections.PROJECTS.map((item) => escapeLatex(item))
+    : ['What you built', 'What problem it solves', 'Any result or outcome'];
+
+  const educationText = sections.EDUCATION.length
+    ? escapeLatex(sections.EDUCATION.join(' | '))
+    : 'College Name | Year | Degree | Location';
+
+  const extraText = sections.ACHIEVEMENTS.length
+    ? escapeLatex(sections.ACHIEVEMENTS.join(' '))
+    : 'Certifications, achievements, or anything extra.';
+
+  return `\\documentclass[a4paper,10pt]{article}
+
+\\usepackage[left=0.7in,right=0.7in,top=0.6in,bottom=0.6in]{geometry}
+\\usepackage{enumitem}
+\\usepackage{titlesec}
+\\usepackage{hyperref}
+\\usepackage{xcolor}
+
+% ---------- FONT ----------
+\\usepackage{helvet}
+\\renewcommand{\\familydefault}{\\sfdefault}
+
+% ---------- SECTION STYLE ----------
+\\titleformat{\\section}{
+  \\large\\bfseries\\uppercase
+}{}{0em}{}[\\titlerule]
+
+% ---------- CUSTOM COMMANDS ----------
+\\newcommand{\\resumeItem}[1]{
+  \\item \\small{#1}
+}
+
+\\newcommand{\\resumeSubheading}[4]{
+  \\vspace{2pt}
+  \\textbf{#1} \\hfill {\\small #2} \\\\
+  \\textit{\\small #3} \\hfill \\textit{\\small #4} \\\\
+}
+
+\\newcommand{\\resumeProject}[2]{
+  \\textbf{#1} \\hfill {\\small #2} \\\\
+}
+
+\\setlist[itemize]{noitemsep, topsep=0pt}
+
+\\begin{document}
+
+\\begin{center}
+    {\\LARGE \\textbf{${escapeLatex(name)}}} \\\\
+    \\vspace{4pt}
+    \\small
+    ${contactLine}
+\\end{center}
+
+\\vspace{-8pt}
+
+\\section*{Summary}
+\\small{
+${summaryText}
+}
+
+\\section*{Skills}
+\\small{
+\\textbf{Skills:} ${skillsText}
+}
+
+\\section*{Experience}
+\\begin{itemize}
+${experienceItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
+\\end{itemize}
+
+\\section*{Projects}
+\\resumeProject{Project Name}{Tech Stack}
+\\begin{itemize}
+${projectItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
+\\end{itemize}
+
+\\section*{Education}
+\\resumeSubheading
+{${educationText}}{ }
+{Degree}{Location}
+
+\\section*{Additional Information}
+\\small{
+${extraText}
+}
+
+\\end{document}`;
+};
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    POST /api/generate
