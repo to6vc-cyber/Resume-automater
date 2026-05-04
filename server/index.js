@@ -143,88 +143,117 @@ const isQuotaError = (error) => {
 };
 
 /* ─── Multi-Provider LLM Call with Smart Fallback ─── */
-const callLLM = async (prompt) => {
-  const errors = {};
-  let groqFailed = false;
+const buildLatexResume = (markdownResume) => {
+  const { name, contact, sections } = parseResumeMarkdown(markdownResume);
+  const contactLine = contact.length
+    ? contact.map((part) => escapeLatex(part)).join(' \\quad | \\quad ')
+    : '';
 
-  // Try Groq first
-  if (groq) {
-    try {
-      log('🔄 Attempting Groq API call…');
-      const result = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4096,
-        temperature: 0.7,
-      });
-      const content = result.choices[0]?.message?.content;
-      if (content) {
-        log('✅ Groq API call successful.');
-        lastUsedProvider = 'groq';
-        return content;
-      }
-    } catch (groqError) {
-      groqFailed = true;
-      errors.groq = groqError;
-      const errorStr = JSON.stringify({
-        status: groqError.status,
-        message: groqError.message,
-        type: groqError.type,
-        code: groqError.code
-      });
-      logError(`❌ Groq API failed:`);
-      logError(`   ${errorStr}`);
-      log(`\n🔄 Switching to Gemini provider…\n`);
-    }
-  } else {
-    log('⚠️ Groq client not initialized (GROQ_API_KEY missing)');
-  }
+  const summaryText = sections.SUMMARY.length
+    ? escapeLatex(sections.SUMMARY.join(' '))
+    : '';
 
-  // Fall back to Gemini (guaranteed if Groq failed or not available)
-  if (groqFailed || !groq) {
-    if (GEMINI_API_KEY) {
-      try {
-        log('🔄 Attempting Gemini API call…');
-        log(`   Key: ${GEMINI_API_KEY.substring(0, 20)}...`);
-        log(`   Endpoint: https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent`);
-        
-        const geminiPayload = {
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        };
+  const skillsText = sections.SKILLS.length
+    ? escapeLatex(sections.SKILLS.join(', '))
+    : '';
 
-        const response = await axios.post(
-          `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-          geminiPayload,
-          {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 30000,
-            validateStatus: () => true // Don't throw on any status
-          }
-        );
+  const experienceBlock = renderItemList(sections.EXPERIENCE);
+  const projectsBlock = renderItemList(sections.PROJECTS);
+  const educationBlock = renderItemList(sections.EDUCATION);
+  const additionalBlock = renderItemList(sections.ACHIEVEMENTS);
 
-        log(`   Response status: ${response.status}`);
-        log(`   Response headers: ${JSON.stringify(response.headers, null, 2)}`);
-        log(`   Response data: ${JSON.stringify(response.data, null, 2)}`);
+  return `\\documentclass[a4paper,10pt]{article}
 
-        // Check for Gemini API errors
-        if (response.status >= 400) {
-          const errMsg = JSON.stringify(response.data, null, 2);
-          logError(`   ❌ HTTP Error ${response.status}`);
-          logError(`   Error response: ${errMsg}`);
-          throw new Error(`Gemini HTTP ${response.status}: ${errMsg}`);
-        }
+\\usepackage[left=0.7in,right=0.7in,top=0.6in,bottom=0.6in]{geometry}
+\\usepackage{enumitem}
+\\usepackage{titlesec}
+\\usepackage{hyperref}
+\\usepackage{xcolor}
 
-        const textContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (textContent) {
-          log('✅ Gemini API call successful.');
-          lastUsedProvider = 'gemini';
-          return textContent;
-        }
-        
-        logError('   ❌ No text content in Gemini response');
-        logError(`   Full response: ${JSON.stringify(response.data)}`);
+% ---------- FONT ----------
+\\usepackage{helvet}
+\\renewcommand{\\familydefault}{\\sfdefault}
+
+% ---------- SECTION STYLE ----------
+\\titleformat{\\section}{
+  \\large\\bfseries\\uppercase
+}{}{0em}{}[\\titlerule]
+
+% ---------- CUSTOM COMMANDS ----------
+\\newcommand{\\resumeItem}[1]{
+  \\item \\small{#1}
+}
+
+\\newcommand{\\resumeSubheading}[4]{
+  \\vspace{2pt}
+  \\textbf{#1} \\hfill {\\small #2} \\\\\\ 
+  \\textit{\\small #3} \\hfill \\textit{\\small #4} \\\\\\ 
+}
+
+\\newcommand{\\resumeProject}[2]{
+  \\textbf{#1} \\hfill {\\small #2} \\\\\\ 
+}
+
+\\setlist[itemize]{noitemsep, topsep=0pt}
+
+\\begin{document}
+
+% ---------- HEADER ----------
+\\begin{center}
+    {\\LARGE \\textbf{${escapeLatex(name)}}} \\\\\\ 
+    \\vspace{4pt}
+    \\small
+    ${contactLine}
+\\end{center}
+
+\\vspace{-8pt}
+
+% ---------- SUMMARY ----------
+\\section*{Summary}
+\\small{
+${summaryText || 'A short 2--3 line professional summary. Keep it clean and impactful.'}
+}
+
+% ---------- SKILLS ----------
+\\section*{Skills}
+\\small{
+${skillsText || '\\textbf{Languages:} Skill1, Skill2, Skill3 \\\\ \textbf{Tools:} Tool1, Tool2, Tool3'}
+}
+
+% ---------- EXPERIENCE ----------
+\\section*{Experience}
+
+${experienceBlock || `\\begin{itemize}
+\\resumeItem{Achievement or responsibility written in one line}
+\\resumeItem{Use action verbs and measurable results}
+\\resumeItem{Keep it concise and impactful}
+\\end{itemize}`}
+
+% ---------- PROJECTS ----------
+\\section*{Projects}
+
+${projectsBlock || `\\resumeProject{Project Name}{Tech Stack}
+\\begin{itemize}
+\\resumeItem{What you built}
+\\resumeItem{What problem it solves}
+\\resumeItem{Any result or outcome}
+\\end{itemize}`}
+
+% ---------- EDUCATION ----------
+\\section*{Education}
+
+${educationBlock || `\\resumeSubheading
+{College Name}{Year}
+{Degree}{Location}`}
+
+% ---------- EXTRA ----------
+\\section*{Additional Information}
+\\small{
+${additionalBlock || 'Certifications, achievements, or anything extra.'}
+}
+
+\\end{document}`;
+};
         throw new Error('Gemini returned empty response');
       } catch (geminiError) {
         errors.gemini = geminiError;
