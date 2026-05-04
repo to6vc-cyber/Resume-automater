@@ -5,6 +5,8 @@ import Groq from 'groq-sdk';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
+import os from 'os';
 
 const app = express();
 app.use(cors());
@@ -65,6 +67,60 @@ const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/* ─── Local PDF Compilation (pdflatex) ─── */
+const compileLaTexToPDF = async (latexCode) => {
+  try {
+    // Check if pdflatex is available
+    try {
+      execSync('which pdflatex > /dev/null 2>&1', { stdio: 'ignore' });
+    } catch {
+      log('⚠️ pdflatex not found. Please install MacTeX: brew install --cask mactex');
+      return null;
+    }
+
+    // Create temporary directory
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'latex-'));
+    const texFile = path.join(tmpDir, 'resume.tex');
+    const pdfFile = path.join(tmpDir, 'resume.pdf');
+
+    // Write LaTeX to temporary file
+    fs.writeFileSync(texFile, latexCode, 'utf8');
+    log(`📝 LaTeX written to: ${texFile}`);
+
+    // Compile LaTeX to PDF using pdflatex
+    log('🔨 Compiling LaTeX to PDF with pdflatex…');
+    try {
+      execSync(
+        `cd "${tmpDir}" && pdflatex -interaction=nonstopmode -halt-on-error -output-directory="${tmpDir}" "${texFile}" > /dev/null 2>&1`,
+        { timeout: 30000 }
+      );
+    } catch (execError) {
+      log('⚠️ pdflatex compilation had warnings/errors, checking for output…');
+    }
+
+    // Check if PDF was generated
+    if (!fs.existsSync(pdfFile)) {
+      logError('❌ pdflatex did not generate PDF');
+      // Cleanup
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return null;
+    }
+
+    // Read PDF and convert to base64
+    const pdfBuffer = fs.readFileSync(pdfFile);
+    const pdfBase64 = pdfBuffer.toString('base64');
+    log('✅ PDF compiled successfully');
+
+    // Cleanup
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    return pdfBase64;
+  } catch (error) {
+    logError(`❌ Local PDF compilation failed: ${error.message}`);
+    return null;
+  }
+};
 
 /* ─── Provider Status Tracking ─── */
 let lastUsedProvider = 'groq';
@@ -587,12 +643,32 @@ Build a completely new resume with these rules:
     log('✅ Step 2 complete — LaTeX generated.');
     log(`   LaTeX length: ${latexCode.length} chars`);
 
-    /* ── Step 3 onwards: Optional Overleaf PDF Compilation ── */
+    /* ── Step 3 onwards: Try Local PDF Compilation First, then Overleaf ── */
+    
+    // Try local PDF compilation (pdflatex)
+    log('📝 Step 3: Attempting local PDF compilation with pdflatex…');
+    let pdfBase64 = await compileLaTexToPDF(latexCode);
+
+    if (pdfBase64) {
+      log('✅ PDF generated successfully via local compilation');
+      return res.json({
+        status: 'success',
+        message: '✅ Resume generated with PDF (local compilation)',
+        pdfBase64: pdfBase64,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode,
+        markdownResume,
+      });
+    }
+
+    log('⚠️ Local PDF compilation unavailable. Trying Overleaf (if credentials available)…');
+    
     if (!OVERLEAF_AVAILABLE) {
       log('⚠️ Overleaf credentials not available. Returning LaTeX only (no PDF).');
       return res.json({
         status: 'success',
-        message: 'Resume generated successfully! PDF compilation skipped (Overleaf credentials not configured).',
+        message: 'Resume generated successfully! PDF compilation skipped (pdflatex and Overleaf not available). Install MacTeX: brew install --cask mactex',
         pdfBase64: null,
         projectUrl: null,
         pdfUrl: null,
@@ -718,7 +794,6 @@ Build a completely new resume with these rules:
 
     const projectUrl = `https://www.overleaf.com/project/${projectId}`;
 
-    let pdfBase64 = null;
     let pdfUrl = null;
 
     if (!pdfFile) {
