@@ -64,7 +64,7 @@ const WORKFLOW = [
   },
   {
     title: 'Package',
-    desc: 'Creates a finished PDF through your Overleaf pipeline.',
+    desc: 'Creates a finished PDF through latexonline.cc.',
   },
 ]
 
@@ -222,7 +222,7 @@ export default function App() {
               </div>
               <div>
                 <strong>PDF</strong>
-                <span>Overleaf compiled</span>
+                  <span>latexonline.cc compiled</span>
               </div>
               <div>
                 <strong>Fast</strong>
@@ -356,7 +356,7 @@ export default function App() {
                   )}
                   {result.projectUrl ? (
                     <a id="overleaf-link" href={result.projectUrl} target="_blank" rel="noopener noreferrer" className="secondary-button">
-                      Open Overleaf
+                      Open source
                       <ExternalIcon size={15} />
                     </a>
                   ) : null}

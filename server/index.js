@@ -5,8 +5,6 @@ import Groq from 'groq-sdk';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
-import os from 'os';
 
 const app = express();
 app.use(cors());
@@ -36,12 +34,11 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
+const LATEXONLINE_BASE_URL = 'https://latexonline.cc';
 
 /* ─── Validate env vars ─── */
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const OVERLEAF_SESSION_COOKIE_RAW = process.env.OVERLEAF_SESSION_COOKIE;
-const OVERLEAF_GCLB_TOKEN_RAW = process.env.OVERLEAF_GCLB_TOKEN;
 
 if (!GROQ_API_KEY) {
   log('⚠️ GROQ_API_KEY is not set. Gemini will be used as fallback.');
@@ -54,92 +51,42 @@ if (!GROQ_API_KEY && !GEMINI_API_KEY) {
   process.exit(1);
 }
 
-// Overleaf is optional - app can work without it
-const OVERLEAF_AVAILABLE = !!(OVERLEAF_SESSION_COOKIE_RAW && OVERLEAF_GCLB_TOKEN_RAW);
-if (!OVERLEAF_AVAILABLE) {
-  log('⚠️ Overleaf credentials not set. PDF compilation will be skipped. Set OVERLEAF_SESSION_COOKIE and OVERLEAF_GCLB_TOKEN to enable PDF export.');
-}
-
 /* ─── LLM Clients ─── */
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
-/* ─── Shared user-agent ─── */
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/* ─── Local PDF Compilation (pdflatex) ─── */
+/* ─── PDF Compilation (latexonline.cc) ─── */
 const compileLaTexToPDF = async (latexCode) => {
   try {
-    // Check if pdflatex is available
-    try {
-      execSync('which pdflatex > /dev/null 2>&1', { stdio: 'ignore' });
-    } catch {
-      log('⚠️ pdflatex not found. Please install MacTeX: brew install --cask mactex');
-      return null;
+    log('🔨 Compiling PDF with latexonline.cc…');
+
+    const response = await axios.get(`${LATEXONLINE_BASE_URL}/compile`, {
+      params: {
+        text: latexCode,
+        command: 'pdflatex',
+        force: 'true',
+        download: 'resume.pdf',
+      },
+      responseType: 'arraybuffer',
+      timeout: 120000,
+      validateStatus: () => true,
+    });
+
+    const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+    const responseBuffer = Buffer.from(response.data);
+
+    if (response.status >= 200 && response.status < 300 && contentType.includes('pdf')) {
+      log('✅ PDF compiled successfully (latexonline.cc)');
+      return responseBuffer.toString('base64');
     }
 
-    // Create temporary directory
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'latex-'));
-    const texFile = path.join(tmpDir, 'resume.tex');
-    const pdfFile = path.join(tmpDir, 'resume.pdf');
-
-    // Write LaTeX to temporary file
-    fs.writeFileSync(texFile, latexCode, 'utf8');
-    log(`📝 LaTeX written to: ${texFile}`);
-
-    // Compile LaTeX to PDF using pdflatex
-    log('🔨 Compiling LaTeX to PDF with pdflatex…');
-    try {
-      execSync(
-        `cd "${tmpDir}" && pdflatex -interaction=nonstopmode -halt-on-error -output-directory="${tmpDir}" "${texFile}" > /dev/null 2>&1`,
-        { timeout: 30000 }
-      );
-    } catch (execError) {
-      log('⚠️ pdflatex compilation had warnings/errors, checking for output…');
-    }
-
-    // Check if PDF was generated
-    if (!fs.existsSync(pdfFile)) {
-      logError('❌ pdflatex did not generate PDF');
-      // Cleanup
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      return null;
-    }
-
-    // Read PDF and convert to base64
-    const pdfBuffer = fs.readFileSync(pdfFile);
-    const pdfBase64 = pdfBuffer.toString('base64');
-    log('✅ PDF compiled successfully');
-
-    // Cleanup
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-
-    return pdfBase64;
+    const errorText = responseBuffer.toString('utf8').trim();
+    const message = errorText || `HTTP ${response.status} from latexonline.cc`;
+    logError(`❌ latexonline.cc failed: ${message}`);
+    return null;
   } catch (error) {
-    logError(`❌ Local PDF compilation failed: ${error.message}`);
+    logError(`❌ latexonline.cc compilation failed: ${error.message}`);
     return null;
   }
-};
-
-/* ─── Provider Status Tracking ─── */
-let lastUsedProvider = 'groq';
-
-const isQuotaError = (error) => {
-  const msg = String(error?.message || error).toLowerCase();
-  const status = error?.status || error?.response?.status || error?.statusCode;
-  log(`   [DEBUG] Error check - status: ${status}, message: ${msg.substring(0, 100)}`);
-  return (
-    status === 429 ||
-    status === 403 ||
-    msg.includes('quota') ||
-    msg.includes('rate limit') ||
-    msg.includes('rate_limit') ||
-    msg.includes('too many requests') ||
-    msg.includes('rate limiting') ||
-    msg.includes('exhausted') ||
-    msg.includes('429')
-  );
 };
 
 /* ─── Multi-Provider LLM Call with Smart Fallback ─── */
@@ -160,7 +107,6 @@ const callLLM = async (prompt) => {
       const content = result.choices[0]?.message?.content;
       if (content) {
         log('✅ Groq API call successful.');
-        lastUsedProvider = 'groq';
         return content;
       }
     } catch (groqError) {
@@ -219,7 +165,6 @@ const callLLM = async (prompt) => {
         const textContent = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (textContent) {
           log('✅ Gemini API call successful.');
-          lastUsedProvider = 'gemini';
           return textContent;
         }
         
@@ -247,39 +192,6 @@ const callLLM = async (prompt) => {
   logError(`   Gemini configured: ${!!GEMINI_API_KEY}`);
   logError(`   Groq failed: ${groqFailed}`);
   throw new Error('Both LLM providers failed. Check API keys, quotas, and network.');
-};
-
-const extractCompileDiagnostics = (compileData) => {
-  const outputFiles = compileData?.outputFiles || [];
-  const logFile = outputFiles.find((file) => file.path === 'output.log');
-  const rawLog =
-    compileData?.compile?.log ||
-    compileData?.compile?.error ||
-    compileData?.error ||
-    compileData?.message ||
-    logFile?.content ||
-    '';
-
-  if (typeof rawLog === 'string' && rawLog.trim()) {
-    const errorLines = rawLog
-      .split('\n')
-      .filter((line) => /^!|^l\.\d+|error|fatal/i.test(line.trim()))
-      .slice(0, 12)
-      .join('\n')
-      .trim();
-
-    return errorLines || rawLog.slice(0, 1200).trim();
-  }
-
-  return 'Overleaf did not return a readable compile log for this request.';
-};
-
-const isCompileStillPending = (compileData) => {
-  const status = String(
-    compileData?.status || compileData?.compile?.status || compileData?.state || ''
-  ).toLowerCase();
-
-  return /pending|running|compil|queued|processing|in[-_ ]?progress/.test(status);
 };
 
 const stripMarkdown = (value = '') => {
@@ -400,22 +312,6 @@ const parseResumeMarkdown = (markdownResume) => {
     contact: [...new Set(contact)].slice(0, 5),
     sections,
   };
-};
-
-const renderItemList = (items) => {
-  const safeItems = items.map((item) => escapeLatex(item)).filter(Boolean);
-  if (!safeItems.length) return '';
-
-  return `\\begin{itemize}[topsep=0pt, itemsep=3pt, leftmargin=0.2in]
-${safeItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
-\\end{itemize}`;
-};
-
-const renderSection = (icon, title, items) => {
-  const body = renderItemList(items);
-  if (!body) return '';
-  return `\\sectiontitle{${title}}
-${body}`;
 };
 
 const buildLatexResume = (markdownResume) => {
@@ -669,214 +565,39 @@ Build a completely new resume with these rules:
     log('✅ Step 2 complete — LaTeX generated.');
     log(`   LaTeX length: ${latexCode.length} chars`);
 
-    /* ── Step 3 onwards: Try Local PDF Compilation First, then Overleaf ── */
-    
-    // Try local PDF compilation (pdflatex)
-    log('📝 Step 3: Attempting local PDF compilation with pdflatex…');
-    let pdfBase64 = await compileLaTexToPDF(latexCode);
+    /* ── Step 3: Compile PDF through latexonline.cc ── */
 
-    if (pdfBase64) {
-      log('✅ PDF generated successfully via local compilation');
-      return res.json({
-        status: 'success',
-        message: '✅ Resume generated with PDF (local compilation)',
-        pdfBase64: pdfBase64,
-        projectUrl: null,
-        pdfUrl: null,
-        latexCode,
-        markdownResume,
-      });
-    }
+    log('📝 Step 3: Attempting PDF compilation through latexonline.cc.');
+    let pdfBase64 = null;
 
-    log('⚠️ Local PDF compilation unavailable. Trying Overleaf (if credentials available)…');
-    
-    if (!OVERLEAF_AVAILABLE) {
-      log('⚠️ Overleaf credentials not available. Returning LaTeX only (no PDF).');
-      return res.json({
-        status: 'success',
-        message: 'Resume generated successfully! PDF compilation skipped (pdflatex and Overleaf not available). Install MacTeX: brew install --cask mactex',
-        pdfBase64: null,
-        projectUrl: null,
-        pdfUrl: null,
-        latexCode,
-        markdownResume,
-      });
-    }
-
-    // Try to compile to PDF, but don't fail if Overleaf has issues
     try {
-      /* ── Step 3: Decode Overleaf session cookie ── */
-      log('🔑 Step 3: Decoding Overleaf credentials…');
-
-      const SESSION_COOKIE = decodeURIComponent(OVERLEAF_SESSION_COOKIE_RAW);
-      const GCLB_TOKEN = OVERLEAF_GCLB_TOKEN_RAW;
-
-      const cookieStr = `overleaf_session2=${SESSION_COOKIE}; GCLB=${GCLB_TOKEN}`;
-
-      log('✅ Step 3 complete.');
-
-      /* ── Step 4: GET /project to fetch CSRF token ── */
-      log('🔐 Step 4: Fetching Overleaf CSRF token…');
-
-      const csrfResponse = await axios.get('https://www.overleaf.com/project', {
-        headers: {
-          'User-Agent': UA,
-          Cookie: cookieStr,
-        },
-        maxRedirects: 5,
-        validateStatus: (s) => s < 400,
-      });
-
-      const html = typeof csrfResponse.data === 'string' ? csrfResponse.data : '';
-
-      const csrfMatch =
-        html.match(/name="ol-csrfToken" content="([^"]+)"/) ||
-        html.match(/content="([^"]+)" name="ol-csrfToken"/);
-
-      if (!csrfMatch) {
-        throw new Error(
-          'Could not extract CSRF token from Overleaf. Your session cookie may have expired.'
-        );
-      }
-
-      const csrfToken = csrfMatch[1];
-      log('✅ Step 4 complete — CSRF token obtained.');
-
-    /* ── Step 5: POST /docs to create project ── */
-    log('📤 Step 5: Creating Overleaf project…');
-
-    const createResponse = await axios.post(
-      'https://www.overleaf.com/docs',
-      new URLSearchParams({
-        _csrf: csrfToken,
-        snip: latexCode,
-        engine: 'pdflatex',
-      }).toString(),
-      {
-        headers: {
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          Referer: 'https://www.overleaf.com/project',
-          Origin: 'https://www.overleaf.com',
-          'User-Agent': UA,
-          Cookie: cookieStr,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        maxRedirects: 0,
-        validateStatus: (s) => s >= 200 && s < 400,
-      }
-    );
-
-    const locationHeader =
-      createResponse.headers?.location || createResponse.headers?.['Location'] || '';
-    const projectIdMatch = locationHeader.match(/\/project\/([a-f0-9]{24})/);
-
-    if (!projectIdMatch) {
-      throw new Error(
-        'Could not extract project ID from Overleaf redirect. Location: ' +
-          locationHeader
-      );
-    }
-
-    const projectId = projectIdMatch[1];
-    log(`✅ Step 5 complete — project created: ${projectId}`);
-
-    /* ── Step 6: POST compile ── */
-    log('🔨 Step 6: Compiling PDF on Overleaf…');
-
-    let compileData = null;
-    let pdfFile = null;
-
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      const compileResponse = await axios.post(
-        `https://www.overleaf.com/project/${projectId}/compile`,
-        new URLSearchParams({
-          check: 'silent',
-          draft: 'false',
-          stopOnFirstError: 'false',
-        }).toString(),
-        {
-          headers: {
-            Cookie: cookieStr,
-            'X-Csrf-Token': csrfToken,
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': UA,
-          },
-          validateStatus: (s) => s < 500,
-        }
-      );
-
-      compileData = compileResponse.data;
-      const outputFiles = compileData?.outputFiles || [];
-      pdfFile = outputFiles.find((f) => f.path === 'output.pdf');
-
-      if (pdfFile) break;
-      if (!isCompileStillPending(compileData) && attempt >= 2) break;
-
-      log(`   Overleaf compile not ready yet; retrying (${attempt}/5)…`);
-      await sleep(2000);
-    }
-
-    const projectUrl = `https://www.overleaf.com/project/${projectId}`;
-
-    let pdfUrl = null;
-
-    if (!pdfFile) {
-      const diagnostics = extractCompileDiagnostics(compileData);
-      logError('⚠️ Overleaf compile failed:', diagnostics);
-      log('📄 Returning resume without PDF (Overleaf compilation failed)');
-    } else {
-      try {
-        pdfUrl = 'https://www.overleaf.com' + pdfFile.url;
-        log('✅ Step 6 complete — PDF compiled.');
-
-        /* ── Step 7: Download the PDF ── */
-        log('📥 Step 7: Downloading compiled PDF…');
-
-        const pdfResponse = await axios.get(pdfUrl, {
-          headers: {
-            Cookie: cookieStr,
-            'User-Agent': UA,
-          },
-          responseType: 'arraybuffer',
+      pdfBase64 = await compileLaTexToPDF(latexCode);
+      if (pdfBase64) {
+        log('✅ latexonline.cc compilation succeeded; returning PDF.');
+        return res.json({
+          status: 'success',
+          message: '✅ Resume generated with PDF from latexonline.cc',
+          pdfBase64,
+          projectUrl: null,
+          pdfUrl: null,
+          latexCode,
+          markdownResume,
         });
-
-        pdfBase64 = Buffer.from(pdfResponse.data).toString('base64');
-        log('✅ Step 7 complete — PDF downloaded and encoded.');
-      } catch (pdfErr) {
-        logError('⚠️ Failed to download PDF:', pdfErr.message);
-        log('📄 Returning resume without PDF');
-        pdfBase64 = null;
-        pdfUrl = null;
       }
+      log('⚠️ latexonline.cc did not produce a PDF.');
+    } catch (localErr) {
+      logError('⚠️ latexonline.cc compilation attempt failed: ' + String(localErr.message || localErr));
     }
 
-    /* ── Return success (with or without PDF) ── */
     return res.json({
       status: 'success',
-      projectUrl: pdfFile ? projectUrl : null,
-      pdfUrl: pdfUrl,
       pdfBase64: pdfBase64,
+      projectUrl: null,
+      pdfUrl: null,
       message: pdfBase64 ? '✅ Resume generated with PDF' : '⚠️ Resume generated (PDF compilation skipped or failed)',
-      latexCode: latexCode,
-      markdownResume: markdownResume,
+      latexCode,
+      markdownResume,
     });
-    } catch (overleafErr) {
-      logError('⚠️ Overleaf PDF compilation failed:', overleafErr.message);
-      log('📄 Returning resume without PDF (Overleaf unavailable or credentials expired)');
-      
-      // Return success but without PDF
-      return res.json({
-        status: 'success',
-        message: '✅ Resume generated! PDF compilation skipped (Overleaf unavailable). Your resume markdown/LaTeX is ready.',
-        pdfBase64: null,
-        projectUrl: null,
-        pdfUrl: null,
-        latexCode,
-        markdownResume,
-      });
-    }
   } catch (err) {
     logError('❌ Error:', err.message);
     log('📄 Returning error response but keeping server alive');
@@ -956,7 +677,7 @@ process.on('uncaughtException', (err) => {
   logError('❌ UNCAUGHT EXCEPTION:', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   logError('❌ UNHANDLED REJECTION:', reason);
 });
 
