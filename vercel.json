@@ -7,6 +7,10 @@
       "destination": "/api/$1"
     },
     {
+      "source": "/generate",
+      "destination": "/api/generate"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

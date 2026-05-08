@@ -118,6 +118,24 @@ export default function App() {
     }
   }
 
+  const postGenerateWithFallback = async (payload) => {
+    const endpoints = ['/api/generate', '/api/generate/', '/generate']
+    let lastRes = null
+
+    for (const endpoint of endpoints) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      lastRes = res
+      if (res.status !== 404) return res
+    }
+
+    return lastRes
+  }
+
   const handleGenerate = async () => {
     if (!isValid || isLoading) return
     setCurrentStep(0)
@@ -126,21 +144,18 @@ export default function App() {
     setError(null)
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobDescription: jobDesc.trim(),
-          currentResume: resume.trim(),
-        }),
+      const res = await postGenerateWithFallback({
+        jobDescription: jobDesc.trim(),
+        currentResume: resume.trim(),
       })
       const data = await parseApiResponse(res)
+      const message = data?.message || data?.error?.message
 
       if (res.ok && data.status === 'success') {
         setCurrentStep(4)
         setTimeout(() => setResult(data), 500)
       } else {
-        setError(data.message || `Request failed with status ${res.status}.`)
+        setError(message || `Request failed with status ${res.status}.`)
       }
     } catch (err) {
       setError(err.message || 'Network error.')
