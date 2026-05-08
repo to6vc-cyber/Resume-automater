@@ -378,18 +378,57 @@ const extractFallbackKeywords = (text = '', limit = 8) => {
   return picked;
 };
 
+const collectResumeSnippets = (text = '', limit = 5) => {
+  const ignoredHeading = /^(professional summary|summary|education|work experience|professional experience|employment history|skills|technical skills|projects|project experience|achievements|certifications|awards|additional information)\b/i;
+  const ignoredContact = /^(address|phone|phone no|email|linkedin|github)\s*:/i;
+  const lines = String(text)
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => stripMarkdown(line).replace(/^[•*-]\s*/, '').trim())
+    .filter(Boolean);
+
+  const snippets = [];
+  for (const line of lines) {
+    if (ignoredHeading.test(line) || ignoredContact.test(line)) continue;
+    if (/^https?:\/\//i.test(line)) continue;
+    if (line.includes('|') && line.length < 40) continue;
+    if (snippets.includes(line)) continue;
+    snippets.push(line);
+    if (snippets.length >= limit) break;
+  }
+
+  return snippets;
+};
+
+const buildFallbackBulletLines = (snippets, keywords, fallbackLabel, limit = 3) => {
+  const lines = [];
+
+  for (const snippet of snippets) {
+    if (lines.length >= limit) break;
+    lines.push(snippet);
+  }
+
+  while (lines.length < limit) {
+    const keywordPhrase = keywords.slice(lines.length * 2, lines.length * 2 + 3).join(', ');
+    lines.push(keywordPhrase ? `${fallbackLabel} with ${keywordPhrase}.` : `${fallbackLabel}.`);
+  }
+
+  return lines;
+};
+
 const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage = '') => {
   const parsed = parseResumeMarkdown(currentResume);
   const jobKeywords = extractFallbackKeywords(jobDescription, 8);
   const resumeKeywords = extractFallbackKeywords(currentResume, 8);
   const combinedKeywords = [...new Set([...jobKeywords, ...resumeKeywords])].slice(0, 8);
+  const resumeSnippets = collectResumeSnippets(currentResume, 6);
 
   const contactLine = parsed.contact.length
     ? parsed.contact.join(' | ')
     : 'Phone | Email | LinkedIn | GitHub';
 
   const summary = jobKeywords.length
-    ? `Targeting ${jobKeywords.slice(0, 3).join(', ')} roles with a focus on ${jobKeywords.slice(3, 6).join(', ') || jobKeywords.slice(0, 3).join(', ')}.`
+    ? `Targeting ${jobKeywords.slice(0, 3).join(', ')} roles with a focus on ${jobKeywords.slice(3, 6).join(', ') || jobKeywords.slice(0, 3).join(', ')} and hands-on delivery.`
     : 'Targeting the requested role with a focus on clear impact, ATS keywords, and concise execution.';
 
   const educationLines = parsed.sections.EDUCATION.length
@@ -398,8 +437,7 @@ const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage 
 
   const experienceLines = parsed.sections.EXPERIENCE.length
     ? parsed.sections.EXPERIENCE
-    : [stripMarkdown(currentResume).split('\n').filter(Boolean).slice(0, 3).join(' ')
-        || 'Add your most relevant experience here.'];
+    : buildFallbackBulletLines(resumeSnippets, combinedKeywords, 'Delivered frontend work', 3);
 
   const projectLines = parsed.sections.PROJECTS.length
     ? parsed.sections.PROJECTS
@@ -407,11 +445,15 @@ const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage 
         jobKeywords.length
           ? `Project aligned to ${jobKeywords.slice(0, 4).join(', ')}.`
           : 'Project aligned to the target role.',
+        ...buildFallbackBulletLines(resumeSnippets.slice(0, 2), combinedKeywords, 'Built and shipped a focused project', 2),
       ];
 
   const skillLines = parsed.sections.SKILLS.length
     ? parsed.sections.SKILLS
-    : [combinedKeywords.join(', ') || 'Keyword alignment, execution, communication'];
+    : [
+        combinedKeywords.length ? combinedKeywords.join(', ') : 'Keyword alignment, execution, communication',
+        jobKeywords.length ? `Role focus: ${jobKeywords.slice(0, 4).join(', ')}` : 'Role focus: adaptable frontend delivery',
+      ];
 
   const achievementLines = parsed.sections.ACHIEVEMENTS.length
     ? parsed.sections.ACHIEVEMENTS
@@ -466,6 +508,12 @@ const buildLatexResume = (markdownResume) => {
   const projectItems = sections.PROJECTS.length
     ? sections.PROJECTS.map((item) => escapeLatex(item))
     : ['What you built', 'What problem it solves', 'Any result or outcome'];
+  const projectTitle = sections.PROJECTS.length
+    ? escapeLatex(sections.PROJECTS[0])
+    : 'Selected Project';
+  const projectDetails = sections.PROJECTS.length > 1
+    ? sections.PROJECTS.slice(1).map((item) => escapeLatex(item))
+    : projectItems;
 
   const educationText = sections.EDUCATION.length
     ? escapeLatex(sections.EDUCATION.join(' | '))
@@ -536,9 +584,9 @@ ${experienceItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
 \\end{itemize}
 
 \\section*{Projects}
-\\resumeProject{Project Name}{Tech Stack}
+\resumeProject{${projectTitle}}{${skillsText.split(',').slice(0, 3).join(', ') || 'Tech Stack'}}
 \\begin{itemize}
-${projectItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
+${projectDetails.map((item) => `  \resumeItem{${item}}`).join('\n')}
 \\end{itemize}
 
 \\section*{Education}
