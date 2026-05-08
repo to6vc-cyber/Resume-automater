@@ -322,6 +322,99 @@ const parseResumeMarkdown = (markdownResume) => {
   };
 };
 
+const extractFallbackKeywords = (text = '', limit = 8) => {
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'that', 'from', 'this', 'your', 'you', 'are', 'was', 'were',
+    'has', 'have', 'had', 'into', 'over', 'under', 'using', 'used', 'use', 'role', 'job', 'resume',
+    'experience', 'skills', 'skill', 'work', 'team', 'teams', 'build', 'built', 'develop', 'developed',
+    'ability', 'responsible', 'responsibilities', 'preferred', 'required', 'preferred', 'including',
+    'across', 'such', 'etc', 'our', 'their', 'they', 'them', 'can', 'will', 'may', 'should', 'must'
+  ]);
+
+  const tokens = stripMarkdown(text)
+    .toLowerCase()
+    .match(/[a-z0-9#+.-]{3,}/g) || [];
+
+  const picked = [];
+  const seen = new Set();
+
+  for (const token of tokens) {
+    if (stopWords.has(token) || seen.has(token)) continue;
+    seen.add(token);
+    picked.push(token.replace(/^[^a-z0-9]+|[^a-z0-9#+.-]+$/g, ''));
+    if (picked.length >= limit) break;
+  }
+
+  return picked;
+};
+
+const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage = '') => {
+  const parsed = parseResumeMarkdown(currentResume);
+  const jobKeywords = extractFallbackKeywords(jobDescription, 8);
+  const resumeKeywords = extractFallbackKeywords(currentResume, 8);
+  const combinedKeywords = [...new Set([...jobKeywords, ...resumeKeywords])].slice(0, 8);
+
+  const contactLine = parsed.contact.length
+    ? parsed.contact.join(' | ')
+    : 'Phone | Email | LinkedIn | GitHub';
+
+  const summary = jobKeywords.length
+    ? `Targeting ${jobKeywords.slice(0, 3).join(', ')} roles with a focus on ${jobKeywords.slice(3, 6).join(', ') || jobKeywords.slice(0, 3).join(', ')}.`
+    : 'Targeting the requested role with a focus on clear impact, ATS keywords, and concise execution.';
+
+  const educationLines = parsed.sections.EDUCATION.length
+    ? parsed.sections.EDUCATION
+    : ['Degree | Institution | Location | Dates'];
+
+  const experienceLines = parsed.sections.EXPERIENCE.length
+    ? parsed.sections.EXPERIENCE
+    : [stripMarkdown(currentResume).split('\n').filter(Boolean).slice(0, 3).join(' ')
+        || 'Add your most relevant experience here.'];
+
+  const projectLines = parsed.sections.PROJECTS.length
+    ? parsed.sections.PROJECTS
+    : [
+        jobKeywords.length
+          ? `Project aligned to ${jobKeywords.slice(0, 4).join(', ')}.`
+          : 'Project aligned to the target role.',
+      ];
+
+  const skillLines = parsed.sections.SKILLS.length
+    ? parsed.sections.SKILLS
+    : [combinedKeywords.join(', ') || 'Keyword alignment, execution, communication'];
+
+  const achievementLines = parsed.sections.ACHIEVEMENTS.length
+    ? parsed.sections.ACHIEVEMENTS
+    : [
+        errorMessage
+          ? `Generated as a safe fallback after LLM provider errors: ${stripMarkdown(errorMessage)}`
+          : 'Generated as a safe fallback when online providers were unavailable.',
+      ];
+
+  return [
+    parsed.name || 'Tailored Resume',
+    contactLine,
+    '',
+    'Professional Summary',
+    summary,
+    '',
+    'Education',
+    ...educationLines,
+    '',
+    'Work Experience',
+    ...experienceLines.map((line) => `- ${line}`),
+    '',
+    'Skills',
+    ...skillLines.map((line) => `- ${line}`),
+    '',
+    'Projects',
+    ...projectLines.map((line) => `- ${line}`),
+    '',
+    'Achievements',
+    ...achievementLines.map((line) => `- ${line}`),
+  ].join('\n');
+};
+
 const buildLatexResume = (markdownResume) => {
   const { name, contact, sections } = parseResumeMarkdown(markdownResume);
   const contactLine = contact.length
@@ -609,6 +702,26 @@ Build a completely new resume with these rules:
   } catch (err) {
     logError('❌ Error:', err.message);
     log('📄 Returning error response but keeping server alive');
+
+    const fallbackMarkdownResume = buildOfflineResumeMarkdown(jobDescription, currentResume, err.message);
+    const fallbackLatexCode = buildLatexResume(fallbackMarkdownResume);
+
+    try {
+      const fallbackPdfBase64 = await compileLaTexToPDF(fallbackLatexCode);
+      return res.status(200).json({
+        status: fallbackPdfBase64 ? 'success' : 'partial',
+        message: fallbackPdfBase64
+          ? '✅ Resume generated with fallback content after provider issues.'
+          : `✅ Resume generated with fallback content after provider issues. PDF compilation was skipped or failed: ${err.message}`,
+        pdfBase64: fallbackPdfBase64,
+        projectUrl: null,
+        pdfUrl: null,
+        latexCode: fallbackLatexCode,
+        markdownResume: fallbackMarkdownResume,
+      });
+    } catch (fallbackErr) {
+      logError('⚠️ Fallback generation also failed: ' + String(fallbackErr.message || fallbackErr));
+    }
     
     // If we at least have LaTeX, return it
     if (latexCode) {
