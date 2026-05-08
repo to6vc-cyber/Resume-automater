@@ -242,6 +242,14 @@ const firstNonEmptyLine = (lines) => {
   return lines.find((line) => line && !/^[-_*]{3,}$/.test(line)) || 'Tailored Resume';
 };
 
+const normalizeHeadingText = (value = '') => {
+  return stripMarkdown(value)
+    .replace(/[:-]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
+
 const splitContactLine = (line = '') => {
   return line
     .replace(/^phone\s+no\s*:/i, 'Phone:')
@@ -260,18 +268,34 @@ const parseResumeMarkdown = (markdownResume) => {
 
   const headingAliases = new Map([
     ['professional summary', 'SUMMARY'],
+    ['summary of qualifications', 'SUMMARY'],
+    ['career summary', 'SUMMARY'],
     ['summary', 'SUMMARY'],
     ['education', 'EDUCATION'],
+    ['academic background', 'EDUCATION'],
     ['work experience', 'EXPERIENCE'],
+    ['professional experience', 'EXPERIENCE'],
+    ['career experience', 'EXPERIENCE'],
     ['experience', 'EXPERIENCE'],
     ['employment history', 'EXPERIENCE'],
+    ['work history', 'EXPERIENCE'],
     ['skills', 'SKILLS'],
     ['technical skills', 'SKILLS'],
+    ['core competencies', 'SKILLS'],
+    ['key skills', 'SKILLS'],
+    ['technical expertise', 'SKILLS'],
     ['projects', 'PROJECTS'],
+    ['selected projects', 'PROJECTS'],
+    ['key projects', 'PROJECTS'],
     ['project experience', 'PROJECTS'],
     ['achievements', 'ACHIEVEMENTS'],
+    ['achievements and awards', 'ACHIEVEMENTS'],
+    ['awards and honors', 'ACHIEVEMENTS'],
     ['certifications', 'ACHIEVEMENTS'],
     ['awards', 'ACHIEVEMENTS'],
+    ['honors', 'ACHIEVEMENTS'],
+    ['additional information', 'ACHIEVEMENTS'],
+    ['additional skills', 'ACHIEVEMENTS'],
   ]);
 
   const sections = {
@@ -283,15 +307,21 @@ const parseResumeMarkdown = (markdownResume) => {
     ACHIEVEMENTS: [],
   };
   const contact = [];
-  let currentSection = null;
   let name = '';
+  let currentSection = null;
 
   for (const line of rawLines) {
     if (/^[-_*]{3,}$/.test(line)) continue;
 
-    const normalizedHeading = stripMarkdown(line).replace(/:$/, '').toLowerCase();
+    const normalizedHeading = normalizeHeadingText(line);
     if (headingAliases.has(normalizedHeading)) {
       currentSection = headingAliases.get(normalizedHeading);
+      continue;
+    }
+
+    if (/^(professional summary|summary of qualifications|career summary|education|academic background|work experience|professional experience|career experience|employment history|work history|skills|technical skills|core competencies|key skills|technical expertise|projects|selected projects|key projects|achievements|certifications|awards|honors|additional information)\b/i.test(normalizedHeading)) {
+      const matchedHeading = normalizeHeadingText(normalizedHeading.split(':')[0]);
+      currentSection = headingAliases.get(matchedHeading) || currentSection;
       continue;
     }
 
