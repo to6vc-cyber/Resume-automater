@@ -5,6 +5,7 @@ import Groq from 'groq-sdk';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 const app = express();
 app.use(cors());
@@ -13,7 +14,7 @@ app.use(express.json({ limit: '5mb' }));
 const IS_SERVERLESS = process.env.VERCEL === '1';
 
 // Log file path
-const LOG_FILE = path.join(process.cwd(), 'server.log');
+const LOG_FILE = process.env.VERCEL === '1' || process.env.VERCEL === 'true' ? path.join(os.tmpdir(), 'server.log') : path.join(process.cwd(), 'server.log');
 
 // Enhanced logging that writes to both console and file
 const log = (message) => {
@@ -27,7 +28,11 @@ const logError = (message) => {
 };
 
 // Clear log file on startup
-fs.writeFileSync(LOG_FILE, `[${new Date().toISOString()}] Server started\n`);
+try {
+  fs.writeFileSync(LOG_FILE, `[${new Date().toISOString()}] Server started\n`);
+} catch (e) {
+  console.warn('Could not write server log file (continuing):', e.message);
+}
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -50,7 +55,8 @@ if (!GEMINI_API_KEY) {
 }
 if (!GROQ_API_KEY && !GEMINI_API_KEY) {
   logError('❌ Neither GROQ_API_KEY nor GEMINI_API_KEY is set.');
-  process.exit(1);
+  logError('   Continuing without keys — requests will return an error instead of crashing the function.');
+  // Do NOT exit the process in serverless environments; handle errors per-request.
 }
 
 /* ─── LLM Clients ─── */
