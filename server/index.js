@@ -10,6 +10,8 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+const IS_SERVERLESS = process.env.VERCEL === '1';
+
 // Log file path
 const LOG_FILE = path.join(process.cwd(), 'server.log');
 
@@ -666,31 +668,35 @@ app.use((err, req, res, next) => {
   });
 });
 
-/* ─── Start ─── */
-const server = app.listen(PORT, () => {
-  log(`🚀 ATS Resume Tailor backend running on http://localhost:${PORT}`);
-  log(`🔌 Server is listening and ready to accept requests`)
-});
-
-// Error handlers
-process.on('uncaughtException', (err) => {
-  logError('❌ UNCAUGHT EXCEPTION:', err);
-});
-
-process.on('unhandledRejection', (reason) => {
-  logError('❌ UNHANDLED REJECTION:', reason);
-});
-
-// Prevent process from exiting
-process.on('SIGINT', () => {
-  log('\n📌 Shutting down gracefully...');
-  server.close(() => {
-    log('✅ Server closed');
-    process.exit(0);
+if (!IS_SERVERLESS) {
+  /* ─── Start ─── */
+  const server = app.listen(PORT, () => {
+    log(`🚀 ATS Resume Tailor backend running on http://localhost:${PORT}`);
+    log(`🔌 Server is listening and ready to accept requests`)
   });
-});
 
-// Keep-alive interval
-setInterval(() => {
-  // Server is running
-}, 30000);
+  // Error handlers
+  process.on('uncaughtException', (err) => {
+    logError('❌ UNCAUGHT EXCEPTION:', err);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    logError('❌ UNHANDLED REJECTION:', reason);
+  });
+
+  // Prevent process from exiting
+  process.on('SIGINT', () => {
+    log('\n📌 Shutting down gracefully...');
+    server.close(() => {
+      log('✅ Server closed');
+      process.exit(0);
+    });
+  });
+
+  // Keep-alive interval
+  setInterval(() => {
+    // Server is running
+  }, 30000);
+}
+
+export default app;
