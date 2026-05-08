@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import Groq from 'groq-sdk';
 import axios from 'axios';
+import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -41,7 +42,6 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-const LATEXONLINE_BASE_URL = 'https://latexonline.cc';
 
 /* ─── Validate env vars ─── */
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -62,37 +62,123 @@ if (!GROQ_API_KEY && !GEMINI_API_KEY) {
 /* ─── LLM Clients ─── */
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
-/* ─── PDF Compilation (latexonline.cc) ─── */
-const compileLaTexToPDF = async (latexCode) => {
+/* ─── PDF Rendering (PDFKit) ─── */
+const compileResumeToPDF = async (markdownResume) => {
   try {
-    log('🔨 Compiling PDF with latexonline.cc…');
+    log('🔨 Rendering PDF with PDFKit…');
 
-    const response = await axios.get(`${LATEXONLINE_BASE_URL}/compile`, {
-      params: {
-        text: latexCode,
-        command: 'pdflatex',
-        force: 'true',
-        download: 'resume.pdf',
-      },
-      responseType: 'arraybuffer',
-      timeout: 120000,
-      validateStatus: () => true,
+    const { name, contact, sections } = parseResumeMarkdown(markdownResume);
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 44, bottom: 44, left: 46, right: 46 },
+      bufferPages: true,
+      compress: true,
     });
 
-    const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
-    const responseBuffer = Buffer.from(response.data);
+    const pdfBuffer = await new Promise((resolve, reject) => {
+      const chunks = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
 
-    if (response.status >= 200 && response.status < 300 && contentType.includes('pdf')) {
-      log('✅ PDF compiled successfully (latexonline.cc)');
-      return responseBuffer.toString('base64');
-    }
+      const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const safeText = (value = '') => String(value).replace(/\r/g, '').trim();
 
-    const errorText = responseBuffer.toString('utf8').trim();
-    const message = errorText || `HTTP ${response.status} from latexonline.cc`;
-    logError(`❌ latexonline.cc failed: ${message}`);
-    return null;
+      const writeSectionHeading = (heading) => {
+        doc.moveDown(0.6);
+        doc.font('Helvetica-Bold').fontSize(11).text(heading.toUpperCase(), {
+          width: contentWidth,
+        });
+        doc.moveDown(0.15);
+        const y = doc.y;
+        doc.moveTo(doc.page.margins.left, y).lineTo(doc.page.width - doc.page.margins.right, y).strokeColor('#8a8a8a').lineWidth(0.6).stroke();
+        doc.moveDown(0.35);
+        doc.strokeColor('#000000');
+      };
+
+      const writeParagraph = (text, options = {}) => {
+        const value = safeText(text);
+        if (!value) return;
+        doc.font(options.font || 'Helvetica').fontSize(options.size || 10).text(value, {
+          width: contentWidth,
+          align: options.align || 'left',
+          lineGap: options.lineGap || 2,
+          paragraphGap: options.paragraphGap || 5,
+        });
+      };
+
+      const writeBullets = (items) => {
+        const filtered = items.map(safeText).filter(Boolean);
+        for (const item of filtered) {
+          doc.font('Helvetica').fontSize(9.5).text(`- ${item}`, {
+            width: contentWidth,
+            indent: 10,
+            lineGap: 2,
+            paragraphGap: 2,
+          });
+        }
+      };
+
+      doc.font('Helvetica-Bold').fontSize(18).fillColor('#111111').text(safeText(name) || 'Tailored Resume', {
+        width: contentWidth,
+        align: 'center',
+      });
+
+      if (contact.length) {
+        doc.moveDown(0.3);
+        doc.font('Helvetica').fontSize(9).fillColor('#444444').text(contact.map((part) => safeText(part)).filter(Boolean).join('   |   '), {
+          width: contentWidth,
+          align: 'center',
+        });
+      }
+
+      doc.moveDown(0.4);
+      doc.strokeColor('#9a9a9a').lineWidth(1).moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+      doc.moveDown(0.4);
+
+      const summaryText = sections.SUMMARY.length
+        ? sections.SUMMARY.join(' ')
+        : 'A focused professional summary aligned to the target role.';
+      writeSectionHeading('Summary');
+      writeParagraph(summaryText);
+
+      const skillsText = sections.SKILLS.length
+        ? sections.SKILLS.join(', ')
+        : 'Skill1, Skill2, Skill3';
+      writeSectionHeading('Skills');
+      writeParagraph(skillsText);
+
+      const experienceItems = sections.EXPERIENCE.length
+        ? sections.EXPERIENCE
+        : ['Add your most relevant experience here.', 'Keep bullets concise and impact-driven.', 'Use action verbs and measurable outcomes.'];
+      writeSectionHeading('Experience');
+      writeBullets(experienceItems);
+
+      const projectItems = sections.PROJECTS.length
+        ? sections.PROJECTS
+        : ['What you built', 'What problem it solves', 'Any result or outcome'];
+      writeSectionHeading('Projects');
+      writeBullets(projectItems);
+
+      const educationItems = sections.EDUCATION.length
+        ? sections.EDUCATION
+        : ['College Name | Year | Degree | Location'];
+      writeSectionHeading('Education');
+      writeBullets(educationItems);
+
+      const extraItems = sections.ACHIEVEMENTS.length
+        ? sections.ACHIEVEMENTS
+        : ['Certifications, achievements, or anything extra.'];
+      writeSectionHeading('Additional Information');
+      writeBullets(extraItems);
+
+      doc.end();
+    });
+
+    log('✅ PDF rendered successfully (PDFKit)');
+    return pdfBuffer.toString('base64');
   } catch (error) {
-    logError(`❌ latexonline.cc compilation failed: ${error.message}`);
+    logError(`❌ PDFKit rendering failed: ${error.message}`);
     return null;
   }
 };
@@ -584,9 +670,9 @@ ${experienceItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
 \\end{itemize}
 
 \\section*{Projects}
-\resumeProject{${projectTitle}}{${skillsText.split(',').slice(0, 3).join(', ') || 'Tech Stack'}}
+\\resumeProject{${projectTitle}}{${skillsText.split(',').slice(0, 3).join(', ') || 'Tech Stack'}}
 \\begin{itemize}
-${projectDetails.map((item) => `  \resumeItem{${item}}`).join('\n')}
+${projectDetails.map((item) => `  \\resumeItem{${item}}`).join('\n')}
 \\end{itemize}
 
 \\section*{Education}
@@ -744,18 +830,18 @@ Build a completely new resume with these rules:
     log('✅ Step 2 complete — LaTeX generated.');
     log(`   LaTeX length: ${latexCode.length} chars`);
 
-    /* ── Step 3: Compile PDF through latexonline.cc ── */
+    /* ── Step 3: Render PDF locally ── */
 
-    log('📝 Step 3: Attempting PDF compilation through latexonline.cc.');
+    log('📝 Step 3: Rendering PDF locally.');
     let pdfBase64 = null;
 
     try {
-      pdfBase64 = await compileLaTexToPDF(latexCode);
+      pdfBase64 = await compileResumeToPDF(markdownResume);
       if (pdfBase64) {
-        log('✅ latexonline.cc compilation succeeded; returning PDF.');
+        log('✅ PDF rendering succeeded; returning PDF.');
         return res.json({
           status: 'success',
-          message: '✅ Resume generated with PDF from latexonline.cc',
+          message: '✅ Resume generated with locally rendered PDF',
           pdfBase64,
           projectUrl: null,
           pdfUrl: null,
@@ -763,9 +849,9 @@ Build a completely new resume with these rules:
           markdownResume,
         });
       }
-      log('⚠️ latexonline.cc did not produce a PDF.');
+      log('⚠️ PDF renderer did not produce a PDF.');
     } catch (localErr) {
-      logError('⚠️ latexonline.cc compilation attempt failed: ' + String(localErr.message || localErr));
+      logError('⚠️ PDF rendering attempt failed: ' + String(localErr.message || localErr));
     }
 
     return res.json({
@@ -785,12 +871,12 @@ Build a completely new resume with these rules:
     const fallbackLatexCode = buildLatexResume(fallbackMarkdownResume);
 
     try {
-      const fallbackPdfBase64 = await compileLaTexToPDF(fallbackLatexCode);
+      const fallbackPdfBase64 = await compileResumeToPDF(fallbackMarkdownResume);
       return res.status(200).json({
         status: fallbackPdfBase64 ? 'success' : 'partial',
         message: fallbackPdfBase64
           ? '✅ Resume generated with fallback content after provider issues.'
-          : `✅ Resume generated with fallback content after provider issues. PDF compilation was skipped or failed: ${err.message}`,
+          : `✅ Resume generated with fallback content after provider issues. PDF rendering was skipped or failed: ${err.message}`,
         pdfBase64: fallbackPdfBase64,
         projectUrl: null,
         pdfUrl: null,
