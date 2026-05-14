@@ -47,6 +47,9 @@ const PORT = process.env.PORT || 3001;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+/* ─── LLM Clients ─── */
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
+
 if (!GROQ_API_KEY) {
   log('⚠️ GROQ_API_KEY is not set. Gemini will be used as fallback.');
 }
@@ -55,12 +58,7 @@ if (!GEMINI_API_KEY) {
 }
 if (!GROQ_API_KEY && !GEMINI_API_KEY) {
   logError('❌ Neither GROQ_API_KEY nor GEMINI_API_KEY is set.');
-  logError('   Continuing without keys — requests will return an error instead of crashing the function.');
-  // Do NOT exit the process in serverless environments; handle errors per-request.
 }
-
-/* ─── LLM Clients ─── */
-const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
 /* ─── PDF Rendering (PDFKit) ─── */
 const compileResumeToPDF = async (markdownResume) => {
@@ -70,7 +68,7 @@ const compileResumeToPDF = async (markdownResume) => {
     const { name, contact, sections } = parseResumeMarkdown(markdownResume);
     const doc = new PDFDocument({
       size: 'A4',
-      margins: { top: 44, bottom: 44, left: 46, right: 46 },
+      margins: { top: 36, bottom: 36, left: 36, right: 36 },
       bufferPages: true,
       compress: true,
     });
@@ -85,11 +83,31 @@ const compileResumeToPDF = async (markdownResume) => {
       const safeText = (value = '') => String(value).replace(/\r/g, '').replace(/\s+/g, ' ').trim();
       const cleanItem = (value = '') => safeText(value).replace(/^[\u2022\u2023\u25E6\u2043\u2219•\-*]+\s*/, '');
       const dedupe = (items = []) => [...new Set(items.map(cleanItem).filter(Boolean))];
+      const bodyTextOptions = {
+        width: contentWidth,
+        align: 'left',
+        lineGap: 4,
+        paragraphGap: 5,
+        wordSpacing: 0.2,
+      };
+
+      const writeBulletItem = (item, xOffset = 12) => {
+        const startY = doc.y;
+        doc.circle(doc.page.margins.left + 4, startY + 4.5, 1.2).fill('#000000');
+        doc.font('Helvetica').fontSize(10).fillColor('#000000').text(cleanItem(item), {
+          width: contentWidth - xOffset,
+          indent: xOffset,
+          lineGap: 4,
+          paragraphGap: 4,
+          wordSpacing: 0.2,
+          align: 'left',
+        });
+      };
       
       const splitTitleDate = (value = '') => {
         const text = cleanItem(value);
         // Match standard date ranges like "Jan 2020 - Present", "2018-2020", etc.
-        const dateMatch = text.match(/(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*\,?\s*\d{4}\s*[-–]\s*(?:present|current|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*\,?\s*\d{4})\b|\b\d{4}\s*[-–]\s*(?:present|current|\d{4})\b)$/i);
+        const dateMatch = text.match(/(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*,?\s*\d{4}\s*[-–]\s*(?:present|current|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*,?\s*\d{4})\b|\b\d{4}\s*[-–]\s*(?:present|current|\d{4})\b)$/i);
         if (!dateMatch) return { title: text, date: '' };
         return {
           title: text.slice(0, dateMatch.index).replace(/[|,-]\s*$/, '').trim(),
@@ -98,37 +116,33 @@ const compileResumeToPDF = async (markdownResume) => {
       };
 
       const writeSectionHeading = (heading) => {
-        doc.moveDown(0.7);
-        doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(heading.toUpperCase(), {
+        doc.moveDown(0.9);
+        doc.font('Helvetica-Bold').fontSize(11.5).fillColor('#111111').text(heading.toUpperCase(), {
           width: contentWidth,
+          letterSpacing: 0.35,
         });
-        doc.moveDown(0.1);
-        doc.strokeColor('#dddddd').lineWidth(1)
+        doc.moveDown(0.15);
+        doc.strokeColor('#b3b3b3').lineWidth(0.8)
            .moveTo(doc.page.margins.left, doc.y)
            .lineTo(doc.page.width - doc.page.margins.right, doc.y)
            .stroke();
-        doc.moveDown(0.3);
+        doc.moveDown(0.4);
       };
 
       const writeParagraph = (text) => {
         const value = cleanItem(text);
         if (!value) return;
-        doc.font('Helvetica').fontSize(10).fillColor('#222222').text(value, {
-          width: contentWidth,
-          align: 'justify',
-          lineGap: 3,
+        doc.font('Helvetica').fontSize(10).fillColor('#000000').text(value, {
+          ...bodyTextOptions,
+          align: 'left',
         });
       };
 
       const writeBullets = (items) => {
         const filtered = dedupe(items);
         for (const item of filtered) {
-          doc.font('Helvetica').fontSize(10).fillColor('#333333').text(`•   ${item}`, {
-            width: contentWidth - 10,
-            indent: 10,
-            lineGap: 3,
-            paragraphGap: 2,
-          });
+          writeBulletItem(item, 14);
+          doc.moveDown(0.05);
         }
       };
 
@@ -137,79 +151,73 @@ const compileResumeToPDF = async (markdownResume) => {
         if (!filtered.length) return;
 
         let inJob = false;
+        let jobIdx = 0;
         for (const item of filtered) {
           const { title, date } = splitTitleDate(item);
-          // Heuristic: If it has a date, or if it's the very first item, it's a job header
-          if (date || (!inJob && filtered.indexOf(item) === 0)) {
-            if (inJob) doc.moveDown(0.4); // Space between jobs
-            doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text(title || item, {
-              width: contentWidth,
-              continued: !!date,
-            });
+          
+          let isHeader = date || item.includes('|') || (!inJob && jobIdx === 0 && !item.toLowerCase().startsWith('managed ') && !item.toLowerCase().startsWith('developed '));
+
+          if (isHeader) {
+            if (inJob) doc.moveDown(0.35); 
+            
+            let organization = '';
+            let roleOrTitle = title || item;
+            
+            if (roleOrTitle.includes('|')) {
+               const parts = roleOrTitle.split('|').map(s => s.trim());
+               organization = parts[0];
+               roleOrTitle = parts.slice(1).join(' | ');
+            } else if (roleOrTitle.includes('-')) {
+               const parts = roleOrTitle.split('-').map(s => s.trim());
+               if(parts[0].length < 30) {
+                 organization = parts[0];
+                 roleOrTitle = parts.slice(1).join(' - ');
+               }
+            }
+
+            const startY = doc.y;
+            
+            if (organization) {
+               doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#111111').text(organization, {
+                 continued: true,
+                 width: contentWidth - 120,
+               });
+               doc.font('Helvetica').fontSize(10.5).fillColor('#111111').text(` | ${roleOrTitle}`, {
+                 width: contentWidth - 120,
+                 lineGap: 1,
+                 wordSpacing: 0.15,
+               });
+            } else {
+               doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#111111').text(roleOrTitle, {
+                 width: contentWidth - 120,
+                 lineGap: 1,
+               });
+            }
+            
+            const afterTitleY = doc.y;
+
             if (date) {
-              doc.font('Helvetica-Oblique').fontSize(10).fillColor('#555555').text(`   ${date}`, {
+              doc.y = startY;
+              doc.font('Helvetica').fontSize(9.5).fillColor('#555555').text(date, {
                 width: contentWidth,
                 align: 'right',
+                wordSpacing: 0.15,
               });
+              doc.y = Math.max(afterTitleY, doc.y);
             } else {
               doc.moveDown(0.1);
             }
             inJob = true;
           } else {
-            // Bullet point
-            doc.font('Helvetica').fontSize(10).fillColor('#333333').text(`•   ${item}`, {
-              width: contentWidth - 10,
-              indent: 10,
-              lineGap: 3,
-              paragraphGap: 2,
-            });
+            writeBulletItem(item, 14);
+            doc.moveDown(0.05);
           }
+          jobIdx++;
         }
       };
 
       const writeEducation = (items) => {
-        const filtered = dedupe(items);
-        if (!filtered.length) return;
-
-        let inEdu = false;
-        for (const item of filtered) {
-          const { title, date } = splitTitleDate(item);
-          if (date || (!inEdu && filtered.indexOf(item) === 0) || item.includes('|')) {
-            if (inEdu) doc.moveDown(0.3);
-            
-            let displayTitle = title || item;
-            let displayRight = date;
-
-            // Handle pipe-separated "Degree | University" on same line
-            if (!date && item.includes('|')) {
-              const parts = item.split('|').map(p => p.trim());
-              displayTitle = parts[0];
-              displayRight = parts.slice(1).join(' | ');
-            }
-
-            doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#000000').text(displayTitle, {
-              width: contentWidth,
-              continued: !!displayRight,
-            });
-            
-            if (displayRight) {
-              doc.font('Helvetica-Oblique').fontSize(10).fillColor('#555555').text(`   ${displayRight}`, {
-                width: contentWidth,
-                align: 'right',
-              });
-            } else {
-              doc.moveDown(0.1);
-            }
-            inEdu = true;
-          } else {
-            doc.font('Helvetica').fontSize(10).fillColor('#333333').text(`•   ${item}`, {
-              width: contentWidth - 10,
-              indent: 10,
-              lineGap: 3,
-              paragraphGap: 2,
-            });
-          }
-        }
+        writeExperience(items);
       };
 
       const writeSkills = (items) => {
@@ -221,21 +229,15 @@ const compileResumeToPDF = async (markdownResume) => {
           if (parts.length > 1) {
             const label = cleanItem(parts.shift());
             const value = cleanItem(parts.join(':'));
-            doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000').text(`•   ${label}: `, {
+            doc.font('Helvetica-Bold').fontSize(10).fillColor('#111111').text(`${label}: `, {
               continued: true,
-              indent: 5,
             });
-            doc.font('Helvetica').fontSize(10).fillColor('#333333').text(value, {
-              width: contentWidth - 15,
-              lineGap: 3,
-              paragraphGap: 2,
+            doc.font('Helvetica').fontSize(10).fillColor('#111111').text(value, {
+              ...bodyTextOptions,
             });
           } else {
-            doc.font('Helvetica').fontSize(10).fillColor('#333333').text(`•   ${item}`, {
-              width: contentWidth - 5,
-              indent: 5,
-              lineGap: 3,
-              paragraphGap: 2,
+            doc.font('Helvetica').fontSize(10).fillColor('#111111').text(item, {
+              ...bodyTextOptions,
             });
           }
         }
@@ -244,17 +246,21 @@ const compileResumeToPDF = async (markdownResume) => {
       // === Render Professional Resume ===
 
       // Header: Name
-      doc.font('Helvetica-Bold').fontSize(24).fillColor('#000000').text(cleanItem(name) || 'Tailored Resume', {
+      doc.font('Helvetica-Bold').fontSize(22).fillColor('#111111').text(cleanItem(name) || 'Tailored Resume', {
         width: contentWidth,
         align: 'center',
+        lineGap: 0,
+        wordSpacing: 0.2,
       });
 
       // Header: Contact Info
       if (contact.length) {
-        doc.moveDown(0.2);
-        doc.font('Helvetica').fontSize(10).fillColor('#444444').text(contact.map((part) => cleanItem(part)).filter(Boolean).join('   |   '), {
+        doc.moveDown(0.18);
+        doc.font('Helvetica').fontSize(9.3).fillColor('#555555').text(contact.map((part) => cleanItem(part)).filter(Boolean).join('  |  '), {
           width: contentWidth,
           align: 'center',
+          wordSpacing: 0.15,
+          lineGap: 0,
         });
       }
 
@@ -429,6 +435,7 @@ const stripMarkdown = (value = '') => {
     .replace(/[‘’]/g, "'")
     .replace(/[–—]/g, '--')
     .replace(/\u00a0/g, ' ')
+    .replace(/\*/g, '')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')
@@ -471,13 +478,25 @@ const normalizeHeadingText = (value = '') => {
 };
 
 const splitContactLine = (line = '') => {
+  const normalized = stripMarkdown(line);
   return line
     .replace(/^phone\s+no\s*:/i, 'Phone:')
     .split(/\s+\|\s+|\s{2,}/)
-    .map((part) => stripMarkdown(part))
+    .map((part) => stripMarkdown(part || normalized))
     .filter(Boolean)
     .filter((part) => !/^address\s*:/i.test(part));
 };
+
+const splitCleanParts = (value = '') => {
+  return stripMarkdown(value)
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
+};
+
+const isDateLike = (value = '') => /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)?[a-z]*\s*,?\s*\d{4}\s*[-–]\s*(?:present|current|\d{4})\b|\b\d{4}\s*[-–]\s*(?:present|current|\d{4})\b/i.test(value);
+
+const findDateLike = (parts = []) => parts.find((part) => isDateLike(part)) || '';
 
 const parseResumeMarkdown = (markdownResume) => {
   const rawLines = String(markdownResume)
@@ -717,116 +736,199 @@ const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage 
 const buildLatexResume = (markdownResume) => {
   const { name, contact, sections } = parseResumeMarkdown(markdownResume);
   const contactLine = contact.length
-    ? contact.map((part) => escapeLatex(part)).join(' \\quad | \\quad ')
-    : '';
+    ? contact.map((part) => escapeLatex(part)).join(' \\hspace{1pt} $|$ \\hspace{1pt} ')
+    : '[PHONE] \\hspace{1pt} $|$ \\hspace{1pt} [EMAIL] \\hspace{1pt} $|$ \\hspace{1pt} [LINKEDIN] \\hspace{1pt} $|$ \\hspace{1pt} [GITHUB] \\hspace{1pt} $|$ \\hspace{1pt} [LOCATION]';
 
   const summaryText = sections.SUMMARY.length
     ? escapeLatex(sections.SUMMARY.join(' '))
-    : 'A short 2--3 line professional summary. Keep it clean and impactful.';
+    : 'A concise, role-aligned summary focused on impact and ATS keywords.';
 
-  const skillsText = sections.SKILLS.length
-    ? sections.SKILLS.map((item) => escapeLatex(item)).join(', ')
-    : 'Skill1, Skill2, Skill3';
+  const educationPrimaryParts = splitCleanParts(sections.EDUCATION[0] || '');
+  const educationSecondaryParts = splitCleanParts(sections.EDUCATION[1] || '');
+  const educationDegree = escapeLatex(educationPrimaryParts[0] || '[Degree]');
+  const educationDates = escapeLatex(findDateLike(educationSecondaryParts) || educationPrimaryParts.slice(1).find(isDateLike) || '[Dates]');
+  const educationSchool = escapeLatex(educationSecondaryParts[0] || educationPrimaryParts[1] || '[College Name]');
+  const educationLocation = escapeLatex(educationSecondaryParts[1] || educationPrimaryParts[2] || '[Location]');
 
-  const experienceItems = sections.EXPERIENCE.length
-    ? sections.EXPERIENCE.map((item) => escapeLatex(item))
-    : ['Achievement or responsibility written in one line', 'Use action verbs and measurable results', 'Keep it concise and impactful'];
+  const experienceParts = splitCleanParts(sections.EXPERIENCE[0] || '');
+  const experienceCompany = escapeLatex(experienceParts[0] || '[Company Name]');
+  const experienceLocation = escapeLatex(experienceParts[1] || '[Location]');
+  const experienceTitle = escapeLatex(experienceParts[2] || '[Job Title]');
+  const experienceDates = escapeLatex(findDateLike(experienceParts) || '[Start Date] - [End Date]');
+  const experienceBullets = (sections.EXPERIENCE.slice(1, 4).length
+    ? sections.EXPERIENCE.slice(1, 4)
+    : ['[Achievement-driven bullet with keywords + impact]', '[Achievement-driven bullet with keywords + impact]', '[Achievement-driven bullet with keywords + impact]'])
+    .map((item) => escapeLatex(item));
 
-  const projectItems = sections.PROJECTS.length
-    ? sections.PROJECTS.map((item) => escapeLatex(item))
-    : ['What you built', 'What problem it solves', 'Any result or outcome'];
-  const projectTitle = sections.PROJECTS.length
-    ? escapeLatex(sections.PROJECTS[0])
-    : 'Selected Project';
-  const projectDetails = sections.PROJECTS.length > 1
-    ? sections.PROJECTS.slice(1).map((item) => escapeLatex(item))
-    : projectItems;
+  const projectParts = splitCleanParts(sections.PROJECTS[0] || '');
+  const projectTitle = escapeLatex(projectParts[0] || '[Project Title]');
+  const projectDate = escapeLatex(findDateLike(projectParts) || '[Dates]');
+  const projectBullet = escapeLatex(sections.PROJECTS[1] || '[Description with tools, keywords, and measurable impact]');
 
-  const educationText = sections.EDUCATION.length
-    ? escapeLatex(sections.EDUCATION.join(' | '))
-    : 'College Name | Year | Degree | Location';
+  const skillPairs = sections.SKILLS.length
+    ? sections.SKILLS.slice(0, 2).map((item) => {
+        const [label, ...rest] = stripMarkdown(item).split(':');
+        return {
+          label: escapeLatex((label || '[Category]').trim()),
+          value: escapeLatex(rest.join(':').trim() || '[Relevant skills]'),
+        };
+      })
+    : [
+        { label: '[Category 1]', value: '[Relevant skills]' },
+        { label: '[Category 2]', value: '[Relevant skills]' },
+      ];
 
-  const extraText = sections.ACHIEVEMENTS.length
-    ? escapeLatex(sections.ACHIEVEMENTS.join(' '))
-    : 'Certifications, achievements, or anything extra.';
+  const achievementPairs = sections.ACHIEVEMENTS.length
+    ? sections.ACHIEVEMENTS.slice(0, 1).map((item) => {
+        const [label, ...rest] = stripMarkdown(item).split(':');
+        return {
+          label: escapeLatex((label || '[Achievement]').trim()),
+          value: escapeLatex(rest.join(':').trim() || '[detail]'),
+        };
+      })
+    : [{ label: '[Achievement]', value: '[detail]' }];
 
-  return `\\documentclass[a4paper,10pt]{article}
+  return String.raw`%-------------------------------------------
+\documentclass[letterpaper,11pt]{article}
 
-\\usepackage[left=0.7in,right=0.7in,top=0.6in,bottom=0.6in]{geometry}
-\\usepackage{enumitem}
-\\usepackage{titlesec}
-\\usepackage{hyperref}
-\\usepackage{xcolor}
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage[scale=0.90,lf]{FiraMono}
 
-% ---------- FONT ----------
-\\usepackage{helvet}
-\\renewcommand{\\familydefault}{\\sfdefault}
+\definecolor{light-grey}{gray}{0.83}
+\definecolor{dark-grey}{gray}{0.3}
+\definecolor{text-grey}{gray}{.08}
 
-% ---------- SECTION STYLE ----------
-\\titleformat{\\section}{
-  \\large\\bfseries\\uppercase
-}{}{0em}{}[\\titlerule]
+\DeclareRobustCommand{\ebseries}{\fontseries{eb}\selectfont}
+\DeclareTextFontCommand{\texteb}{\ebseries}
 
-% ---------- CUSTOM COMMANDS ----------
-\\newcommand{\\resumeItem}[1]{
-  \\item \\small{#1}
+\usepackage{contour}
+\usepackage[normalem]{ulem}
+\renewcommand{\ULdepth}{1.8pt}
+\contourlength{0.8pt}
+\newcommand{\myuline}[1]{%
+  \uline{\phantom{#1}}%
+  \llap{\contour{white}{#1}}%
 }
 
-\\newcommand{\\resumeSubheading}[4]{
-  \\vspace{2pt}
-  \\textbf{#1} \\hfill {\\small #2} \\\\
-  \\textit{\\small #3} \\hfill \\textit{\\small #4} \\\\
+\usepackage{tgheros}
+\renewcommand*\familydefault{\sfdefault}
+\usepackage[T1]{fontenc}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{0in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+	itleformat{\section}{
+    \bfseries \vspace{2pt} \raggedright \large
+}{}{0em}{}[\color{light-grey} {\titlerule[2pt]} \vspace{-4pt}]
+
+\newcommand{\resumeItem}[1]{\item\small{{#1 \vspace{-1pt}}}}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      	extbf{#1} & {\color{dark-grey}\small #2}\vspace{1pt}\\
+      	extit{#3} & {\color{dark-grey} \small #4}\\
+    \end{tabular*}\vspace{-4pt}
 }
 
-\\newcommand{\\resumeProject}[2]{
-  \\textbf{#1} \\hfill {\\small #2} \\\\
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+      #1 & {\color{dark-grey}} \\
+    \end{tabular*}\vspace{-4pt}
 }
 
-\\setlist[itemize]{noitemsep, topsep=0pt}
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
 
-\\begin{document}
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{0pt}}
 
-\\begin{center}
-    {\\LARGE \\textbf{${escapeLatex(name)}}} \\\\
-    \\vspace{4pt}
-    \\small
-    ${contactLine}
-\\end{center}
+\color{text-grey}
 
-\\vspace{-8pt}
+\begin{document}
 
-\\section*{Summary}
-\\small{
+%----------HEADING----------
+\begin{center}
+  	extbf{\Huge ${escapeLatex(name || 'Full Name')}} \\ \vspace{5pt}
+    \small \faPhone* \texttt{${contactLine}} 
+    \\ \vspace{-3pt}
+\end{center}
+
+\section{SUMMARY}
 ${summaryText}
-}
 
-\\section*{Skills}
-\\small{
-\\textbf{Skills:} ${skillsText}
-}
+\section{EDUCATION}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {${educationDegree}}{${educationDates}}
+      {${educationSchool}}{${educationLocation}}
+  \resumeSubHeadingListEnd
 
-\\section*{Experience}
-\\begin{itemize}
-${experienceItems.map((item) => `  \\resumeItem{${item}}`).join('\n')}
-\\end{itemize}
+\section{EXPERIENCE}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {${experienceCompany}}{${experienceDates}}
+      {${experienceTitle}}{${experienceLocation}}
+      \resumeItemListStart
+        \resumeItem{${experienceBullets[0] || '[Bullet 1]'}}
+        \resumeItem{${experienceBullets[1] || '[Bullet 2]'}}
+        \resumeItem{${experienceBullets[2] || '[Bullet 3]'}}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
 
-\\section*{Projects}
-\\resumeProject{${projectTitle}}{${skillsText.split(',').slice(0, 3).join(', ') || 'Tech Stack'}}
-\\begin{itemize}
-${projectDetails.map((item) => `  \\resumeItem{${item}}`).join('\n')}
-\\end{itemize}
+\section{PROJECTS}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{${projectTitle}}} {${projectDate}}
+          \resumeItemListStart
+            \resumeItem{${projectBullet}}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
 
-\\section*{Education}
-\\resumeSubheading
-{${educationText}}{ }
-{Degree}{Location}
+\section{SKILLS}
+ \begin{itemize}[leftmargin=0in, label={}]
+    \small{\item{
+     	extbf{${skillPairs[0].label}}{: ${skillPairs[0].value}}\vspace{2pt} \\
+     	extbf{${skillPairs[1].label}}{: ${skillPairs[1].value}}
+    }}
+ \end{itemize}
 
-\\section*{Additional Information}
-\\small{
-${extraText}
-}
+\section{ACHIEVEMENTS}
+ \begin{itemize}[leftmargin=0in, label={}]
+    \small{\item{
+     	extbf{${achievementPairs[0].label}}{: ${achievementPairs[0].value}}
+    }}
+ \end{itemize}
 
-\\end{document}`;
+\end{document}`;
 };
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -847,7 +949,7 @@ app.post('/api/generate', async (req, res) => {
   let markdownResume = null;
 
   try {
-    /* ── Step 1: Groq call #1 — ATS Resume Rewriter ── */
+    /* ── Step 1: LLM call — ATS Resume Rewriter ── */
     log('📝 Step 1: Calling LLM for ATS resume rewrite…');
 
     const step1Prompt = `## **Refined Prompt: ATS-Optimized Resume Rewriter**
@@ -959,10 +1061,10 @@ Build a completely new resume with these rules:
     markdownResume = await callLLM(step1Prompt);
 
     if (!markdownResume) {
-      throw new Error('Groq returned an empty resume.');
+      throw new Error('Step 1 returned an empty resume.');
     }
 
-    log('✅ Step 1 complete — markdown resume generated.');
+    log('✅ Step 1 validation passed.');
 
     /* ── Step 2: Deterministic Markdown → LaTeX ── */
     log('📝 Step 2: Rendering safe LaTeX…');
