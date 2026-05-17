@@ -173,7 +173,7 @@ export default function App() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'tailored_resume.pdf'
+    a.download = result.filename || 'tailored_resume.pdf'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -347,6 +347,62 @@ export default function App() {
                   <h3>Your tailored resume is ready</h3>
                   <p>{result.message || 'Download the finished PDF or open the Overleaf project.'}</p>
                 </div>
+                {result.filename || result.jdAnalysis || result.tailored || result.matchedKeywords?.length ? (
+                  <div className="ats-report">
+                    {result.filename ? (
+                      <div className="report-row">
+                        <span>Filename chosen</span>
+                        <strong>{result.filename}</strong>
+                        <p>Built from the candidate name plus the strongest JD role, domain, and skill keywords.</p>
+                      </div>
+                    ) : null}
+                    {result.filenameKeywords?.length ? (
+                      <div className="report-row">
+                        <span>Filename keywords</span>
+                        <p>{result.filenameKeywords.join(', ')}</p>
+                      </div>
+                    ) : null}
+                    {result.jdAnalysis ? (
+                      <div className="report-grid">
+                        <div>
+                          <span>Role title</span>
+                          <strong>{result.jdAnalysis.roleTitle || 'Target Role'}</strong>
+                        </div>
+                        <div>
+                          <span>Seniority</span>
+                          <strong>{result.jdAnalysis.seniority || 'Not specified'}</strong>
+                        </div>
+                        <div>
+                          <span>Core skills</span>
+                          <p>{(result.jdAnalysis.hardSkills || []).join(', ') || 'Not specified'}</p>
+                        </div>
+                        <div>
+                          <span>Domain</span>
+                          <p>{(result.jdAnalysis.industryDomain || []).join(', ') || 'Not specified'}</p>
+                        </div>
+                      </div>
+                    ) : null}
+                    {result.tailored ? (
+                      <div className="report-row">
+                        <span>What was tailored</span>
+                        <p>
+                          {[
+                            result.tailored.summaryRewrite,
+                            result.tailored.skillReordering,
+                            result.tailored.bulletOptimization,
+                          ].filter(Boolean).join(' ')}
+                        </p>
+                      </div>
+                    ) : null}
+                    {result.matchedKeywords?.length ? (
+                      <div className="keyword-list" aria-label="Key JD keywords matched in the resume">
+                        {result.matchedKeywords.map((keyword) => (
+                          <span key={keyword}>{keyword}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="result-actions">
                   {result.pdfBase64 ? (
                     <button id="download-pdf-btn" type="button" onClick={handleDownload} className="primary-button compact">

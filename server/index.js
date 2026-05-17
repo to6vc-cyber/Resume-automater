@@ -68,7 +68,7 @@ const compileResumeToPDF = async (markdownResume) => {
     const { name, contact, sections } = parseResumeMarkdown(markdownResume);
     const doc = new PDFDocument({
       size: 'A4',
-      margins: { top: 36, bottom: 36, left: 36, right: 36 },
+      margins: { top: 45.35, bottom: 45.35, left: 52.44, right: 52.44 },
       bufferPages: true,
       compress: true,
     });
@@ -85,8 +85,8 @@ const compileResumeToPDF = async (markdownResume) => {
       const dedupe = (items = []) => [...new Set(items.map(cleanItem).filter(Boolean))];
       const bodyTextOptions = {
         width: contentWidth,
-        align: 'left',
-        lineGap: 4,
+        align: 'justify',
+        lineGap: 5.8,
         paragraphGap: 5,
         wordSpacing: 0.2,
       };
@@ -94,13 +94,13 @@ const compileResumeToPDF = async (markdownResume) => {
       const writeBulletItem = (item, xOffset = 12) => {
         const startY = doc.y;
         doc.circle(doc.page.margins.left + 4, startY + 4.5, 1.2).fill('#000000');
-        doc.font('Helvetica').fontSize(10).fillColor('#000000').text(cleanItem(item), {
-          width: contentWidth - xOffset,
+        doc.font('Helvetica').fontSize(9.2).fillColor('#000000').text(cleanItem(item), {
+          width: contentWidth - 16,
           indent: xOffset,
-          lineGap: 4,
-          paragraphGap: 4,
+          lineGap: 5.8,
+          paragraphGap: 3,
           wordSpacing: 0.2,
-          align: 'left',
+          align: 'justify',
         });
       };
       
@@ -116,25 +116,24 @@ const compileResumeToPDF = async (markdownResume) => {
       };
 
       const writeSectionHeading = (heading) => {
-        doc.moveDown(0.9);
-        doc.font('Helvetica-Bold').fontSize(11.5).fillColor('#111111').text(heading.toUpperCase(), {
+        doc.moveDown(0.65);
+        doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#1A3C5E').text(heading.toUpperCase(), {
           width: contentWidth,
-          letterSpacing: 0.35,
+          letterSpacing: 0.75,
         });
         doc.moveDown(0.15);
-        doc.strokeColor('#b3b3b3').lineWidth(0.8)
+        doc.strokeColor('#1A3C5E').lineWidth(0.55)
            .moveTo(doc.page.margins.left, doc.y)
            .lineTo(doc.page.width - doc.page.margins.right, doc.y)
            .stroke();
-        doc.moveDown(0.4);
+        doc.moveDown(0.3);
       };
 
       const writeParagraph = (text) => {
         const value = cleanItem(text);
         if (!value) return;
-        doc.font('Helvetica').fontSize(10).fillColor('#000000').text(value, {
+        doc.font('Helvetica').fontSize(9.2).fillColor('#000000').text(value, {
           ...bodyTextOptions,
-          align: 'left',
         });
       };
 
@@ -177,28 +176,16 @@ const compileResumeToPDF = async (markdownResume) => {
 
             const startY = doc.y;
             
-            if (organization) {
-               doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#111111').text(organization, {
-                 continued: true,
-                 width: contentWidth - 120,
-               });
-               doc.font('Helvetica').fontSize(10.5).fillColor('#111111').text(` | ${roleOrTitle}`, {
-                 width: contentWidth - 120,
-                 lineGap: 1,
-                 wordSpacing: 0.15,
-               });
-            } else {
-               doc.font('Helvetica-Bold').fontSize(10.5).fillColor('#111111').text(roleOrTitle, {
-                 width: contentWidth - 120,
-                 lineGap: 1,
-               });
-            }
+            doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#111111').text(roleOrTitle || organization || item, {
+              width: contentWidth - 120,
+              lineGap: 1,
+            });
             
             const afterTitleY = doc.y;
 
             if (date) {
               doc.y = startY;
-              doc.font('Helvetica').fontSize(9.5).fillColor('#555555').text(date, {
+              doc.font('Helvetica-Oblique').fontSize(9.2).fillColor('#666666').text(date, {
                 width: contentWidth,
                 align: 'right',
                 wordSpacing: 0.15,
@@ -206,6 +193,13 @@ const compileResumeToPDF = async (markdownResume) => {
               doc.y = Math.max(afterTitleY, doc.y);
             } else {
               doc.moveDown(0.1);
+            }
+
+            if (organization) {
+              doc.font('Helvetica-Oblique').fontSize(9.2).fillColor('#666666').text(organization, {
+                width: contentWidth,
+                lineGap: 1,
+              });
             }
             inJob = true;
           } else {
@@ -229,14 +223,14 @@ const compileResumeToPDF = async (markdownResume) => {
           if (parts.length > 1) {
             const label = cleanItem(parts.shift());
             const value = cleanItem(parts.join(':'));
-            doc.font('Helvetica-Bold').fontSize(10).fillColor('#111111').text(`${label}: `, {
+            doc.font('Helvetica-Bold').fontSize(9.2).fillColor('#111111').text(`${label}: `, {
               continued: true,
             });
-            doc.font('Helvetica').fontSize(10).fillColor('#111111').text(value, {
+            doc.font('Helvetica').fontSize(9.2).fillColor('#111111').text(value, {
               ...bodyTextOptions,
             });
           } else {
-            doc.font('Helvetica').fontSize(10).fillColor('#111111').text(item, {
+            doc.font('Helvetica').fontSize(9.2).fillColor('#111111').text(item, {
               ...bodyTextOptions,
             });
           }
@@ -256,7 +250,7 @@ const compileResumeToPDF = async (markdownResume) => {
       // Header: Contact Info
       if (contact.length) {
         doc.moveDown(0.18);
-        doc.font('Helvetica').fontSize(9.3).fillColor('#555555').text(contact.map((part) => cleanItem(part)).filter(Boolean).join('  |  '), {
+        doc.font('Helvetica').fontSize(9.2).fillColor('#555555').text(contact.map((part) => cleanItem(part)).filter(Boolean).join('  |  '), {
           width: contentWidth,
           align: 'center',
           wordSpacing: 0.15,
@@ -264,52 +258,49 @@ const compileResumeToPDF = async (markdownResume) => {
         });
       }
 
-      // Summary
       if (sections.SUMMARY.length) {
-        writeSectionHeading('Professional Summary');
+        writeSectionHeading('Summary');
         writeParagraph(sections.SUMMARY.join(' '));
       }
 
-      // Experience
-      if (sections.EXPERIENCE.length) {
-        writeSectionHeading('Professional Experience');
-        writeExperience(sections.EXPERIENCE);
-      }
-
-      // Projects
-      if (sections.PROJECTS.length) {
-        writeSectionHeading('Projects');
-        writeExperience(sections.PROJECTS); // Uses the same date/title split heuristic which works perfectly for projects
-      }
-
-      // Education
-      if (sections.EDUCATION.length) {
-        writeSectionHeading('Education');
-        writeEducation(sections.EDUCATION);
-      }
-
-      // Skills
       if (sections.SKILLS.length) {
         writeSectionHeading('Skills');
         writeSkills(sections.SKILLS);
       }
 
-      // Certifications
+      if (sections.EXPERIENCE.length) {
+        writeSectionHeading('Experience');
+        writeExperience(sections.EXPERIENCE);
+      }
+
+      if (sections.EDUCATION.length) {
+        writeSectionHeading('Education');
+        writeEducation(sections.EDUCATION);
+      }
+
+      if (sections.PROJECTS.length) {
+        writeSectionHeading('Projects');
+        writeExperience(sections.PROJECTS);
+      }
+
+      if (sections.ACHIEVEMENTS.length) {
+        writeSectionHeading('Achievements');
+        writeBullets(sections.ACHIEVEMENTS);
+      }
+
       if (sections.CERTIFICATIONS.length) {
         writeSectionHeading('Certifications');
         writeSkills(sections.CERTIFICATIONS);
       }
 
-      // Tools & Platforms
       if (sections.TOOLS.length) {
-        writeSectionHeading('Tools & Platforms');
+        writeSectionHeading('Tools');
         writeSkills(sections.TOOLS);
       }
 
-      // Achievements
-      if (sections.ACHIEVEMENTS.length) {
-        writeSectionHeading('Achievements');
-        writeBullets(sections.ACHIEVEMENTS);
+      if (sections.LANGUAGES.length) {
+        writeSectionHeading('Languages');
+        writeSkills(sections.LANGUAGES);
       }
 
       doc.end();
@@ -484,19 +475,11 @@ const splitContactLine = (line = '') => {
     .split(/\s+\|\s+|\s{2,}/)
     .map((part) => stripMarkdown(part || normalized))
     .filter(Boolean)
-    .filter((part) => !/^address\s*:/i.test(part));
+    .filter((part) => !/^address\s*:/i.test(part))
+    .filter((part) => !/\b(not available|n\/a|none|null)\b/i.test(part));
 };
 
-const splitCleanParts = (value = '') => {
-  return stripMarkdown(value)
-    .split('|')
-    .map((part) => part.trim())
-    .filter(Boolean);
-};
-
-const isDateLike = (value = '') => /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)?[a-z]*\s*,?\s*\d{4}\s*[-–]\s*(?:present|current|\d{4})\b|\b\d{4}\s*[-–]\s*(?:present|current|\d{4})\b/i.test(value);
-
-const findDateLike = (parts = []) => parts.find((part) => isDateLike(part)) || '';
+const isPlaceholderLine = (value = '') => /^(?:[-*]\s*)?(?:none|not available|n\/a|null|nil|no\s+.+\s+mentioned\.?)$/i.test(stripMarkdown(value));
 
 const parseResumeMarkdown = (markdownResume) => {
   const rawLines = String(markdownResume)
@@ -540,6 +523,8 @@ const parseResumeMarkdown = (markdownResume) => {
     ['tools and platforms', 'TOOLS'],
     ['tools', 'TOOLS'],
     ['platforms', 'TOOLS'],
+    ['languages', 'LANGUAGES'],
+    ['language', 'LANGUAGES'],
   ]);
 
   const sections = {
@@ -551,6 +536,7 @@ const parseResumeMarkdown = (markdownResume) => {
     ACHIEVEMENTS: [],
     CERTIFICATIONS: [],
     TOOLS: [],
+    LANGUAGES: [],
   };
   const contact = [];
   let name = '';
@@ -565,7 +551,7 @@ const parseResumeMarkdown = (markdownResume) => {
       continue;
     }
 
-    if (/^(professional summary|summary of qualifications|career summary|education|academic background|work experience|professional experience|career experience|employment history|work history|skills|technical skills|core competencies|key skills|technical expertise|projects|selected projects|key projects|achievements|certifications|certificates|awards|honors|additional information|tools\s*&\s*platforms|tools and platforms|tools|platforms)\b/i.test(normalizedHeading)) {
+    if (/^(professional summary|summary of qualifications|career summary|education|academic background|work experience|professional experience|career experience|employment history|work history|skills|technical skills|core competencies|key skills|technical expertise|projects|selected projects|key projects|achievements|certifications|certificates|awards|honors|additional information|tools\s*&\s*platforms|tools and platforms|tools|platforms|languages|language)\b/i.test(normalizedHeading)) {
       const matchedHeading = normalizeHeadingText(normalizedHeading.split(':')[0]);
       currentSection = headingAliases.get(matchedHeading) || currentSection;
       continue;
@@ -587,6 +573,7 @@ const parseResumeMarkdown = (markdownResume) => {
     }
 
     if (currentSection) {
+      if (isPlaceholderLine(line)) continue;
       sections[currentSection].push(stripMarkdown(line));
     }
   }
@@ -624,6 +611,172 @@ const extractFallbackKeywords = (text = '', limit = 8) => {
   return picked;
 };
 
+const toTitleCase = (value = '') => stripMarkdown(value)
+  .replace(/[_/-]+/g, ' ')
+  .replace(/[^a-zA-Z0-9+#. ]+/g, ' ')
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((word) => {
+    const lower = word.toLowerCase();
+    if (['seo', 'sem', 'ppc', 'crm', 'saas', 'd2c', 'b2b', 'b2c', 'fmcg'].includes(lower)) return lower.toUpperCase();
+    if (lower === 'ecommerce' || lower === 'e-commerce') return 'Ecommerce';
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  })
+  .join(' ');
+
+const normalizeKeyword = (value = '') => toTitleCase(value)
+  .replace(/\bE Commerce\b/g, 'Ecommerce')
+  .replace(/\bGoogle Analytics\b/i, 'Google Analytics')
+  .replace(/\bGoogle Ads\b/i, 'Google Ads')
+  .replace(/\bMeta Ads\b/i, 'Meta Ads')
+  .replace(/\bFacebook Ads\b/i, 'Facebook Ads')
+  .trim();
+
+const unique = (items = []) => [...new Set(items.map((item) => String(item || '').trim()).filter(Boolean))];
+
+const detectKnownKeywords = (text = '') => {
+  const keywordChecks = [
+    'Performance Marketing', 'Digital Marketing', 'Growth Marketing', 'Social Media',
+    'Content Strategy', 'Content Marketing', 'Meta Ads', 'Facebook Ads', 'Instagram Ads',
+    'Google Ads', 'Google Analytics', 'SEO', 'SEM', 'PPC', 'Shopify', 'E-commerce',
+    'Ecommerce', 'D2C', 'SaaS', 'FMCG', 'Lead Generation', 'Campaign Optimisation',
+    'Campaign Optimization', 'Campaign Management', 'Social Media Management',
+    'Email Marketing', 'CRM', 'Copywriting', 'Analytics', 'Conversion Optimization',
+  ];
+  const lower = String(text).toLowerCase();
+  return unique(keywordChecks
+    .filter((keyword) => lower.includes(keyword.toLowerCase()))
+    .map(normalizeKeyword));
+};
+
+const inferRoleTitle = (jobDescription = '') => {
+  const lines = String(jobDescription)
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => stripMarkdown(line).trim())
+    .filter(Boolean);
+  const patterns = [
+    /\b(?:job title|role|position|opening|hiring)\s*(?:for|:|-)?\s*([A-Za-z0-9 &/+.-]{4,80})/i,
+    /\b([A-Za-z0-9 &/+.-]{4,72}\b(?:Intern|Executive|Associate|Specialist|Analyst|Manager|Senior|Lead|Director|Coordinator))\b/i,
+  ];
+
+  for (const line of lines.slice(0, 10)) {
+    for (const pattern of patterns) {
+      const match = line.match(pattern);
+      if (match?.[1]) {
+        const role = match[1].split(/[.;|]/)[0].replace(/\bresponsibilities\b.*$/i, '').trim();
+        return normalizeKeyword(role).split(/\s+/).slice(0, 5).join(' ');
+      }
+    }
+  }
+
+  const fallback = detectKnownKeywords(jobDescription).find((keyword) => /Marketing|Media|Content|Growth/.test(keyword));
+  return fallback ? `${fallback} Role` : 'Target Role';
+};
+
+const parseJobDescription = (jobDescription = '') => {
+  const knownKeywords = detectKnownKeywords(jobDescription);
+  const domains = unique(knownKeywords.filter((keyword) => ['D2C', 'SaaS', 'FMCG', 'Ecommerce', 'E-commerce'].includes(keyword)));
+  const hardSkills = unique(knownKeywords.filter((keyword) => !domains.includes(keyword)));
+  const seniorityMatch = String(jobDescription).match(/\b(Intern|Executive|Associate|Specialist|Analyst|Manager|Senior|Lead|Director|Coordinator)\b/i);
+  const responsibilities = unique(knownKeywords.filter((keyword) => /Lead Generation|Campaign|Social Media|Content|Marketing|Analytics|CRM/.test(keyword))).slice(0, 6);
+
+  return {
+    roleTitle: inferRoleTitle(jobDescription),
+    hardSkills: hardSkills.length ? hardSkills : extractFallbackKeywords(jobDescription, 8).map(normalizeKeyword),
+    industryDomain: domains,
+    responsibilities,
+    seniority: seniorityMatch ? normalizeKeyword(seniorityMatch[1]) : '',
+  };
+};
+
+const getCandidateNamePrefix = (markdownResume = '', currentResume = '') => {
+  const parsed = parseResumeMarkdown(markdownResume || currentResume || '');
+  const parts = stripMarkdown(parsed.name || 'FirstName LastName')
+    .replace(/[^a-zA-Z ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const firstName = parts[0] || 'FirstName';
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : 'LastName';
+  return `${toTitleCase(firstName).replace(/\s+/g, '')}_${toTitleCase(lastName).replace(/\s+/g, '')}`;
+};
+
+const buildOutputFilename = (jobDescription = '', markdownResume = '', currentResume = '') => {
+  const jd = parseJobDescription(jobDescription);
+  const prefix = getCandidateNamePrefix(markdownResume, currentResume);
+  const roleWords = normalizeKeyword(jd.roleTitle || 'Target Role').split(/\s+/).filter(Boolean);
+  const extraKeywordWords = unique([
+    ...jd.industryDomain,
+    ...jd.hardSkills,
+    jd.seniority,
+  ]).flatMap((keyword) => normalizeKeyword(keyword).split(/\s+/).slice(0, 2));
+
+  const filenameWords = [];
+  for (const word of [...roleWords, ...extraKeywordWords]) {
+    const cleaned = word.replace(/[^A-Za-z0-9]/g, '');
+    if (!cleaned || filenameWords.includes(cleaned)) continue;
+    filenameWords.push(cleaned);
+    if (filenameWords.length >= 6) break;
+  }
+
+  return `${prefix}_${filenameWords.join('_') || 'Target_Role'}.pdf`;
+};
+
+const buildTailoringReport = (jobDescription = '', markdownResume = '', currentResume = '') => {
+  const jd = parseJobDescription(jobDescription);
+  const resumeText = `${markdownResume}\n${currentResume}`.toLowerCase();
+  const matchedKeywords = unique([
+    jd.roleTitle,
+    jd.seniority,
+    ...jd.hardSkills,
+    ...jd.industryDomain,
+    ...jd.responsibilities,
+  ]).filter((keyword) => {
+    const normalized = keyword.toLowerCase();
+    return normalized && resumeText.includes(normalized);
+  });
+
+  return {
+    jdAnalysis: jd,
+    filename: buildOutputFilename(jobDescription, markdownResume, currentResume),
+    filenameKeywords: unique([jd.roleTitle, ...jd.industryDomain, ...jd.hardSkills, jd.seniority]).slice(0, 6),
+    tailored: {
+      summaryRewrite: 'Summary rewritten into 3-4 role-aligned ATS sentences using JD language and existing resume facts.',
+      skillReordering: 'Skills ordered with the most JD-relevant categories first.',
+      bulletOptimization: 'Experience bullets reordered or lightly rephrased to prioritize JD-relevant outcomes without inventing metrics.',
+    },
+    matchedKeywords: matchedKeywords.slice(0, 14),
+  };
+};
+
+const normalizeResumeMarkdown = (markdownResume = '') => {
+  const parsed = parseResumeMarkdown(markdownResume);
+  const lines = [parsed.name || 'Tailored Resume'];
+  if (parsed.contact.length) lines.push(parsed.contact.join(' | '));
+
+  const appendSection = (heading, sectionLines, bullet = true) => {
+    const cleaned = sectionLines.filter((line) => !isPlaceholderLine(line));
+    if (!cleaned.length) return;
+    lines.push('', heading);
+    lines.push(...cleaned.map((line) => (bullet && !/^[-*]/.test(line) ? `- ${line}` : line)));
+  };
+
+  appendSection('Summary', parsed.sections.SUMMARY, false);
+  appendSection('Skills', parsed.sections.SKILLS);
+  appendSection('Experience', parsed.sections.EXPERIENCE);
+  appendSection('Education', parsed.sections.EDUCATION, false);
+  appendSection('Projects', parsed.sections.PROJECTS);
+  appendSection('Achievements', parsed.sections.ACHIEVEMENTS);
+  appendSection('Certifications', parsed.sections.CERTIFICATIONS);
+  appendSection('Tools', parsed.sections.TOOLS);
+  appendSection('Languages', parsed.sections.LANGUAGES);
+
+  return lines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 const collectResumeSnippets = (text = '', limit = 5) => {
   const ignoredHeading = /^(professional summary|summary|education|work experience|professional experience|employment history|skills|technical skills|projects|project experience|achievements|certifications|awards|additional information)\b/i;
   const ignoredContact = /^(address|phone|phone no|email|linkedin|github)\s*:/i;
@@ -646,289 +799,101 @@ const collectResumeSnippets = (text = '', limit = 5) => {
   return snippets;
 };
 
-const buildFallbackBulletLines = (snippets, keywords, fallbackLabel, limit = 3) => {
-  const lines = [];
-
-  for (const snippet of snippets) {
-    if (lines.length >= limit) break;
-    lines.push(snippet);
-  }
-
-  while (lines.length < limit) {
-    const keywordPhrase = keywords.slice(lines.length * 2, lines.length * 2 + 3).join(', ');
-    lines.push(keywordPhrase ? `${fallbackLabel} with ${keywordPhrase}.` : `${fallbackLabel}.`);
-  }
-
-  return lines;
-};
-
-const buildOfflineResumeMarkdown = (jobDescription, currentResume, errorMessage = '') => {
+const buildOfflineResumeMarkdown = (jobDescription, currentResume) => {
   const parsed = parseResumeMarkdown(currentResume);
-  const jobKeywords = extractFallbackKeywords(jobDescription, 8);
-  const resumeKeywords = extractFallbackKeywords(currentResume, 8);
-  const combinedKeywords = [...new Set([...jobKeywords, ...resumeKeywords])].slice(0, 8);
-  const resumeSnippets = collectResumeSnippets(currentResume, 6);
+  const jd = parseJobDescription(jobDescription);
+  const resumeSnippets = collectResumeSnippets(currentResume, 4);
 
   const contactLine = parsed.contact.length
     ? parsed.contact.join(' | ')
     : 'Phone | Email | LinkedIn | GitHub';
 
-  const summary = jobKeywords.length
-    ? `Targeting ${jobKeywords.slice(0, 3).join(', ')} roles with a focus on ${jobKeywords.slice(3, 6).join(', ') || jobKeywords.slice(0, 3).join(', ')} and hands-on delivery.`
-    : 'Targeting the requested role with a focus on clear impact, ATS keywords, and concise execution.';
+  const summary = [
+    `${parsed.name || 'Candidate'} is aligned to ${jd.roleTitle}.`,
+    jd.hardSkills.length ? `Relevant JD keywords include ${jd.hardSkills.slice(0, 5).join(', ')}.` : '',
+    resumeSnippets[0] ? `Resume evidence: ${resumeSnippets[0]}` : '',
+  ].filter(Boolean).join(' ');
 
-  const educationLines = parsed.sections.EDUCATION.length
-    ? parsed.sections.EDUCATION
-    : ['Degree | Institution | Location | Dates'];
-
-  const experienceLines = parsed.sections.EXPERIENCE.length
-    ? parsed.sections.EXPERIENCE
-    : buildFallbackBulletLines(resumeSnippets, combinedKeywords, 'Delivered frontend work', 3);
-
-  const projectLines = parsed.sections.PROJECTS.length
-    ? parsed.sections.PROJECTS
-    : [
-        jobKeywords.length
-          ? `Project aligned to ${jobKeywords.slice(0, 4).join(', ')}.`
-          : 'Project aligned to the target role.',
-        ...buildFallbackBulletLines(resumeSnippets.slice(0, 2), combinedKeywords, 'Built and shipped a focused project', 2),
-      ];
-
-  const skillLines = parsed.sections.SKILLS.length
-    ? parsed.sections.SKILLS
-    : [
-        combinedKeywords.length ? combinedKeywords.join(', ') : 'Keyword alignment, execution, communication',
-        jobKeywords.length ? `Role focus: ${jobKeywords.slice(0, 4).join(', ')}` : 'Role focus: adaptable frontend delivery',
-      ];
-
-  const achievementLines = parsed.sections.ACHIEVEMENTS.length
-    ? parsed.sections.ACHIEVEMENTS
-    : [
-        errorMessage
-          ? `Generated as a safe fallback after LLM provider errors: ${stripMarkdown(errorMessage)}`
-          : 'Generated as a safe fallback when online providers were unavailable.',
-      ];
+  const sectionLines = (key) => parsed.sections[key].map((line) => `- ${line}`);
 
   return [
     parsed.name || 'Tailored Resume',
     contactLine,
     '',
-    'Professional Summary',
+    'Summary',
     summary,
     '',
-    'Education',
-    ...educationLines,
-    '',
-    'Work Experience',
-    ...experienceLines.map((line) => `- ${line}`),
-    '',
     'Skills',
-    ...skillLines.map((line) => `- ${line}`),
+    ...sectionLines('SKILLS'),
+    '',
+    'Experience',
+    ...sectionLines('EXPERIENCE'),
+    '',
+    'Education',
+    ...parsed.sections.EDUCATION,
     '',
     'Projects',
-    ...projectLines.map((line) => `- ${line}`),
+    ...sectionLines('PROJECTS'),
     '',
     'Achievements',
-    ...achievementLines.map((line) => `- ${line}`),
-  ].join('\n');
+    ...sectionLines('ACHIEVEMENTS'),
+    '',
+    'Certifications',
+    ...sectionLines('CERTIFICATIONS'),
+    '',
+    'Tools',
+    ...sectionLines('TOOLS'),
+    '',
+    'Languages',
+    ...sectionLines('LANGUAGES'),
+  ].filter((line, index, arr) => line || arr[index - 1]).join('\n');
 };
 
 const buildLatexResume = (markdownResume) => {
   const { name, contact, sections } = parseResumeMarkdown(markdownResume);
-  const contactLine = contact.length
-    ? contact.map((part) => escapeLatex(part)).join(' \\hspace{1pt} $|$ \\hspace{1pt} ')
-    : '[PHONE] \\hspace{1pt} $|$ \\hspace{1pt} [EMAIL] \\hspace{1pt} $|$ \\hspace{1pt} [LINKEDIN] \\hspace{1pt} $|$ \\hspace{1pt} [GITHUB] \\hspace{1pt} $|$ \\hspace{1pt} [LOCATION]';
+  const sectionOrder = [
+    ['Summary', sections.SUMMARY],
+    ['Skills', sections.SKILLS],
+    ['Experience', sections.EXPERIENCE],
+    ['Education', sections.EDUCATION],
+    ['Projects', sections.PROJECTS],
+    ['Achievements', sections.ACHIEVEMENTS],
+    ['Certifications', sections.CERTIFICATIONS],
+    ['Tools', sections.TOOLS],
+    ['Languages', sections.LANGUAGES],
+  ];
+  const renderLines = (lines = []) => lines
+    .filter(Boolean)
+    .map((line) => {
+      const cleaned = escapeLatex(line);
+      return /^[-*]/.test(line) ? `\\item ${cleaned.replace(/^[-*]\s*/, '')}` : `\\item ${cleaned}`;
+    })
+    .join('\n');
+  const renderSection = ([heading, lines]) => {
+    if (!lines.length) return '';
+    return `\\section*{${escapeLatex(heading)}}\n\\begin{itemize}[leftmargin=16pt]\n${renderLines(lines)}\n\\end{itemize}`;
+  };
 
-  const summaryText = sections.SUMMARY.length
-    ? escapeLatex(sections.SUMMARY.join(' '))
-    : 'A concise, role-aligned summary focused on impact and ATS keywords.';
-
-  const educationPrimaryParts = splitCleanParts(sections.EDUCATION[0] || '');
-  const educationSecondaryParts = splitCleanParts(sections.EDUCATION[1] || '');
-  const educationDegree = escapeLatex(educationPrimaryParts[0] || '[Degree]');
-  const educationDates = escapeLatex(findDateLike(educationSecondaryParts) || educationPrimaryParts.slice(1).find(isDateLike) || '[Dates]');
-  const educationSchool = escapeLatex(educationSecondaryParts[0] || educationPrimaryParts[1] || '[College Name]');
-  const educationLocation = escapeLatex(educationSecondaryParts[1] || educationPrimaryParts[2] || '[Location]');
-
-  const experienceParts = splitCleanParts(sections.EXPERIENCE[0] || '');
-  const experienceCompany = escapeLatex(experienceParts[0] || '[Company Name]');
-  const experienceLocation = escapeLatex(experienceParts[1] || '[Location]');
-  const experienceTitle = escapeLatex(experienceParts[2] || '[Job Title]');
-  const experienceDates = escapeLatex(findDateLike(experienceParts) || '[Start Date] - [End Date]');
-  const experienceBullets = (sections.EXPERIENCE.slice(1, 4).length
-    ? sections.EXPERIENCE.slice(1, 4)
-    : ['[Achievement-driven bullet with keywords + impact]', '[Achievement-driven bullet with keywords + impact]', '[Achievement-driven bullet with keywords + impact]'])
-    .map((item) => escapeLatex(item));
-
-  const projectParts = splitCleanParts(sections.PROJECTS[0] || '');
-  const projectTitle = escapeLatex(projectParts[0] || '[Project Title]');
-  const projectDate = escapeLatex(findDateLike(projectParts) || '[Dates]');
-  const projectBullet = escapeLatex(sections.PROJECTS[1] || '[Description with tools, keywords, and measurable impact]');
-
-  const skillPairs = sections.SKILLS.length
-    ? sections.SKILLS.slice(0, 2).map((item) => {
-        const [label, ...rest] = stripMarkdown(item).split(':');
-        return {
-          label: escapeLatex((label || '[Category]').trim()),
-          value: escapeLatex(rest.join(':').trim() || '[Relevant skills]'),
-        };
-      })
-    : [
-        { label: '[Category 1]', value: '[Relevant skills]' },
-        { label: '[Category 2]', value: '[Relevant skills]' },
-      ];
-
-  const achievementPairs = sections.ACHIEVEMENTS.length
-    ? sections.ACHIEVEMENTS.slice(0, 1).map((item) => {
-        const [label, ...rest] = stripMarkdown(item).split(':');
-        return {
-          label: escapeLatex((label || '[Achievement]').trim()),
-          value: escapeLatex(rest.join(':').trim() || '[detail]'),
-        };
-      })
-    : [{ label: '[Achievement]', value: '[detail]' }];
-
-  return String.raw`%-------------------------------------------
-\documentclass[letterpaper,11pt]{article}
-
-\usepackage{latexsym}
-\usepackage[empty]{fullpage}
-\usepackage{titlesec}
-\usepackage{marvosym}
-\usepackage[usenames,dvipsnames]{color}
-\usepackage{verbatim}
-\usepackage{enumitem}
-\usepackage[hidelinks]{hyperref}
-\usepackage{fancyhdr}
-\usepackage[english]{babel}
-\usepackage{tabularx}
-\usepackage{fontawesome5}
-\usepackage[scale=0.90,lf]{FiraMono}
-
-\definecolor{light-grey}{gray}{0.83}
-\definecolor{dark-grey}{gray}{0.3}
-\definecolor{text-grey}{gray}{.08}
-
-\DeclareRobustCommand{\ebseries}{\fontseries{eb}\selectfont}
-\DeclareTextFontCommand{\texteb}{\ebseries}
-
-\usepackage{contour}
-\usepackage[normalem]{ulem}
-\renewcommand{\ULdepth}{1.8pt}
-\contourlength{0.8pt}
-\newcommand{\myuline}[1]{%
-  \uline{\phantom{#1}}%
-  \llap{\contour{white}{#1}}%
-}
-
-\usepackage{tgheros}
-\renewcommand*\familydefault{\sfdefault}
-\usepackage[T1]{fontenc}
-
-\pagestyle{fancy}
-\fancyhf{}
-\fancyfoot{}
-\renewcommand{\headrulewidth}{0pt}
-\renewcommand{\footrulewidth}{0pt}
-
-\addtolength{\oddsidemargin}{-0.5in}
-\addtolength{\evensidemargin}{0in}
-\addtolength{\textwidth}{1in}
-\addtolength{\topmargin}{-.5in}
-\addtolength{\textheight}{1.0in}
-
-\urlstyle{same}
-\raggedbottom
-\raggedright
-\setlength{\tabcolsep}{0in}
-
-	itleformat{\section}{
-    \bfseries \vspace{2pt} \raggedright \large
-}{}{0em}{}[\color{light-grey} {\titlerule[2pt]} \vspace{-4pt}]
-
-\newcommand{\resumeItem}[1]{\item\small{{#1 \vspace{-1pt}}}}
-
-\newcommand{\resumeSubheading}[4]{
-  \vspace{-1pt}\item
-    \begin{tabular*}{\textwidth}[t]{l@{\extracolsep{\fill}}r}
-      	extbf{#1} & {\color{dark-grey}\small #2}\vspace{1pt}\\
-      	extit{#3} & {\color{dark-grey} \small #4}\\
-    \end{tabular*}\vspace{-4pt}
-}
-
-\newcommand{\resumeProjectHeading}[2]{
-    \item
-    \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
-      #1 & {\color{dark-grey}} \\
-    \end{tabular*}\vspace{-4pt}
-}
-
-\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
-\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
-
-\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0in, label={}]}
-\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
-\newcommand{\resumeItemListStart}{\begin{itemize}}
-\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{0pt}}
-
-\color{text-grey}
-
-\begin{document}
-
-%----------HEADING----------
-\begin{center}
-  	extbf{\Huge ${escapeLatex(name || 'Full Name')}} \\ \vspace{5pt}
-    \small \faPhone* \texttt{${contactLine}} 
-    \\ \vspace{-3pt}
-\end{center}
-
-\section{SUMMARY}
-${summaryText}
-
-\section{EDUCATION}
-  \resumeSubHeadingListStart
-    \resumeSubheading
-      {${educationDegree}}{${educationDates}}
-      {${educationSchool}}{${educationLocation}}
-  \resumeSubHeadingListEnd
-
-\section{EXPERIENCE}
-  \resumeSubHeadingListStart
-    \resumeSubheading
-      {${experienceCompany}}{${experienceDates}}
-      {${experienceTitle}}{${experienceLocation}}
-      \resumeItemListStart
-        \resumeItem{${experienceBullets[0] || '[Bullet 1]'}}
-        \resumeItem{${experienceBullets[1] || '[Bullet 2]'}}
-        \resumeItem{${experienceBullets[2] || '[Bullet 3]'}}
-      \resumeItemListEnd
-  \resumeSubHeadingListEnd
-
-\section{PROJECTS}
-    \resumeSubHeadingListStart
-      \resumeProjectHeading
-          {\textbf{${projectTitle}}} {${projectDate}}
-          \resumeItemListStart
-            \resumeItem{${projectBullet}}
-          \resumeItemListEnd
-    \resumeSubHeadingListEnd
-
-\section{SKILLS}
- \begin{itemize}[leftmargin=0in, label={}]
-    \small{\item{
-     	extbf{${skillPairs[0].label}}{: ${skillPairs[0].value}}\vspace{2pt} \\
-     	extbf{${skillPairs[1].label}}{: ${skillPairs[1].value}}
-    }}
- \end{itemize}
-
-\section{ACHIEVEMENTS}
- \begin{itemize}[leftmargin=0in, label={}]
-    \small{\item{
-     	extbf{${achievementPairs[0].label}}{: ${achievementPairs[0].value}}
-    }}
- \end{itemize}
-
-\end{document}`;
+  return `\\documentclass[a4paper,10pt]{article}
+\\usepackage[margin=1.85cm,top=1.60cm,bottom=1.60cm]{geometry}
+\\usepackage{enumitem}
+\\usepackage{xcolor}
+\\usepackage[T1]{fontenc}
+\\usepackage{helvet}
+\\renewcommand{\\familydefault}{\\sfdefault}
+\\pagestyle{empty}
+\\definecolor{deepnavy}{HTML}{1A3C5E}
+\\setlength{\\parindent}{0pt}
+\\setlist[itemize]{noitemsep,topsep=2pt,leftmargin=16pt}
+\\newcommand{\\ressection}[1]{\\vspace{6pt}{\\fontsize{9.5}{11}\\selectfont\\textbf{\\textcolor{deepnavy}{#1}}}\\par\\vspace{2pt}\\textcolor{deepnavy}{\\hrule}\\vspace{4pt}}
+\\begin{document}
+\\begin{center}
+{\\fontsize{22}{26}\\selectfont\\textbf{${escapeLatex(name || 'Full Name')}}}\\\\
+\\vspace{3pt}
+{\\fontsize{9.2}{15}\\selectfont ${contact.map(escapeLatex).join(' | ')}}
+\\end{center}
+${sectionOrder.map(renderSection).filter(Boolean).join('\n\n').replace(/\\section\*\{([^}]+)\}/g, '\\ressection{$1}')}
+\\end{document}`;
 };
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -952,11 +917,12 @@ app.post('/api/generate', async (req, res) => {
     /* ── Step 1: LLM call — ATS Resume Rewriter ── */
     log('📝 Step 1: Calling LLM for ATS resume rewrite…');
 
-    const step1Prompt = `## **Refined Prompt: ATS-Optimized Resume Rewriter**
+    const jdAnalysis = parseJobDescription(jobDescription);
+    const step1Prompt = `## ATS Resume Skill - Dynamic JD-Based Resume Tailoring
 
 You are an expert resume writer and ATS optimization specialist.
 
-Your task is to generate a **completely new, ATS-optimized resume** using two inputs:
+Your task is to generate a tailored, ATS-optimized resume by matching fixed resume data to the job description.
 
 1. **Job Description**
 2. **Current Resume**
@@ -971,48 +937,54 @@ ${jobDescription}
 **Current Resume:**
 ${currentResume}
 
+**Parsed JD Signals:**
+Role Title: ${jdAnalysis.roleTitle}
+Core Hard Skills: ${jdAnalysis.hardSkills.join(', ') || 'Not specified'}
+Industry / Domain: ${jdAnalysis.industryDomain.join(', ') || 'Not specified'}
+Key Responsibilities: ${jdAnalysis.responsibilities.join(', ') || 'Not specified'}
+Seniority: ${jdAnalysis.seniority || 'Not specified'}
+
 ---
 
 ## **Core Objective**
 
-Transform the provided resume into a **highly targeted, keyword-optimized resume** that aligns strongly with the given job description and skills.
+Transform the provided resume into a targeted, keyword-optimized resume that aligns strongly with the JD while preserving factual accuracy.
 
 The output must:
 * Maximize **ATS keyword matching**
 * Improve **clarity, impact, and structure**
-* Present **experience in a results-driven, achievement-oriented way**
+* Present experience in concise, achievement-oriented wording
+* Use only facts, tools, certifications, projects, and metrics present in the current resume
 
 ---
 
 ## **Execution Guidelines**
 
-### Step 1: Extract Structured Data
-From the current resume, extract only factual information (do NOT reuse phrasing):
-* Personal details: Name, Address, Phone, Email, LinkedIn, GitHub
-* Education: Degree, Institution, Location, Dates
-* Work Experience: Company names, job titles, dates
-* Projects (if present)
+### Step 1: Parse the JD
+Use the parsed JD signals above:
+* Role Title
+* Core Hard Skills
+* Industry / Domain
+* Key Responsibilities
+* Seniority
 
-### Step 2: Keyword & Skill Mapping
-From the job description and skills:
-* Identify **primary keywords** (core skills, tools, technologies)
-* Identify **secondary keywords** (soft skills, domain knowledge, methodologies)
-* Identify **action verbs and impact phrases**
+### Step 2: Plan the Tailoring
+Compare JD keywords against the candidate's real skills, experience, and projects.
+* Professional Summary: rewrite 3-4 concise sentences mirroring the JD role title and language.
+* Skills Order: move the most JD-relevant skill categories to the top.
+* Experience Bullets: reorder or lightly rephrase existing outcomes to prioritize JD relevance.
+* Skills Wording: map existing skills to JD terminology only when factually supported.
 
-### Step 3: Resume Reconstruction
-Build a completely new resume with these rules:
-1. **No Reuse of Original Language** — do NOT copy or paraphrase sentences; only reuse raw facts.
-2. **Strong Keyword Integration** — weave JD keywords naturally into summary, skills, and bullets.
-3. **Work Experience Enhancement** — each bullet: strong action verb + JD tools/tech + measurable impact.
-4. **Professional Summary** — 3–5 lines, role-aligned, impact-focused.
-5. **Skills Section** — grouped by category; JD-relevant skills first.
-6. **Clarity & Readability** — clean, concise, consistent.
+### Critical factual rules
+* Never invent experience, tools, certifications, projects, or metrics.
+* Do not add numbers, percentages, budgets, company names, dates, platforms, or certifications unless present in the current resume.
+* Only rephrase, reorder, or optimize existing information.
+* Keep all content ATS-friendly and naturally keyword aligned.
+* Preserve readability for human recruiters.
 
 ---
 
 ## **Output Format (Strictly Follow)**
-
----
 
 **[Full Name]**
 
@@ -1022,8 +994,22 @@ Build a completely new resume with these rules:
 
 ---
 
-### **Professional Summary**
-[ATS-optimized, role-aligned summary]
+### **Summary**
+[3-4 ATS-optimized, role-aligned sentences]
+
+---
+
+### **Skills**
+* **[Most JD-Relevant Category]:** [Existing relevant skills]
+* **[Next Category]:** [Existing relevant skills]
+
+---
+
+### **Experience**
+**[Company Name] | [Location] | [Job Title]** | [Start Date] - [End Date]
+* [Existing factual bullet reordered or lightly rephrased for JD relevance]
+* [Existing factual bullet reordered or lightly rephrased for JD relevance]
+* [Existing factual bullet reordered or lightly rephrased for JD relevance]
 
 ---
 
@@ -1033,22 +1019,29 @@ Build a completely new resume with these rules:
 
 ---
 
-### **Work Experience**
-**[Company Name] | [Location] | [Job Title]** | [Start Date] - [End Date]
-* [Achievement-driven bullet with keywords + impact]
-* [Achievement-driven bullet with keywords + impact]
-* [Achievement-driven bullet with keywords + impact]
-
----
-
-### **Skills**
-* **[Category]:** [Relevant skills]
-
----
-
 ### **Projects**
 **[Project Title]**
-* [Description with tools, keywords, and measurable impact]
+* [Existing project description rephrased for JD relevance]
+
+---
+
+### **Achievements**
+* [Existing achievement only]
+
+---
+
+### **Certifications**
+* [Existing certification only]
+
+---
+
+### **Tools**
+* [Existing tools only]
+
+---
+
+### **Languages**
+* [Existing languages only]
 
 ---
 
@@ -1063,6 +1056,7 @@ Build a completely new resume with these rules:
     if (!markdownResume) {
       throw new Error('Step 1 returned an empty resume.');
     }
+    markdownResume = normalizeResumeMarkdown(markdownResume);
 
     log('✅ Step 1 validation passed.');
 
@@ -1081,6 +1075,7 @@ Build a completely new resume with these rules:
     try {
       pdfBase64 = await compileResumeToPDF(markdownResume);
       if (pdfBase64) {
+        const report = buildTailoringReport(jobDescription, markdownResume, currentResume);
         log('✅ PDF rendering succeeded; returning PDF.');
         return res.json({
           status: 'success',
@@ -1090,6 +1085,7 @@ Build a completely new resume with these rules:
           pdfUrl: null,
           latexCode,
           markdownResume,
+          ...report,
         });
       }
       log('⚠️ PDF renderer did not produce a PDF.');
@@ -1097,6 +1093,7 @@ Build a completely new resume with these rules:
       logError('⚠️ PDF rendering attempt failed: ' + String(localErr.message || localErr));
     }
 
+    const report = buildTailoringReport(jobDescription, markdownResume, currentResume);
     return res.json({
       status: 'success',
       pdfBase64: pdfBase64,
@@ -1105,16 +1102,18 @@ Build a completely new resume with these rules:
       message: pdfBase64 ? '✅ Resume generated with PDF' : '⚠️ Resume generated (PDF compilation skipped or failed)',
       latexCode,
       markdownResume,
+      ...report,
     });
   } catch (err) {
     logError('❌ Error:', err.message);
     log('📄 Returning error response but keeping server alive');
 
-    const fallbackMarkdownResume = buildOfflineResumeMarkdown(jobDescription, currentResume, err.message);
+    const fallbackMarkdownResume = normalizeResumeMarkdown(buildOfflineResumeMarkdown(jobDescription, currentResume, err.message));
     const fallbackLatexCode = buildLatexResume(fallbackMarkdownResume);
 
     try {
       const fallbackPdfBase64 = await compileResumeToPDF(fallbackMarkdownResume);
+      const report = buildTailoringReport(jobDescription, fallbackMarkdownResume, currentResume);
       return res.status(200).json({
         status: fallbackPdfBase64 ? 'success' : 'partial',
         message: fallbackPdfBase64
@@ -1125,6 +1124,7 @@ Build a completely new resume with these rules:
         pdfUrl: null,
         latexCode: fallbackLatexCode,
         markdownResume: fallbackMarkdownResume,
+        ...report,
       });
     } catch (fallbackErr) {
       logError('⚠️ Fallback generation also failed: ' + String(fallbackErr.message || fallbackErr));
@@ -1132,6 +1132,7 @@ Build a completely new resume with these rules:
     
     // If we at least have LaTeX, return it
     if (latexCode) {
+      const report = buildTailoringReport(jobDescription, markdownResume, currentResume);
       return res.status(200).json({
         status: 'partial',
         message: `✅ Resume generated! Error during PDF compilation: ${err.message}`,
@@ -1140,11 +1141,13 @@ Build a completely new resume with these rules:
         pdfUrl: null,
         latexCode: latexCode,
         markdownResume: markdownResume,
+        ...report,
       });
     }
     
     // If we have markdown but no LaTeX, return markdown
     if (markdownResume) {
+      const report = buildTailoringReport(jobDescription, markdownResume, currentResume);
       return res.status(200).json({
         status: 'partial',
         message: `✅ Resume content generated! Error building LaTeX: ${err.message}`,
@@ -1153,6 +1156,7 @@ Build a completely new resume with these rules:
         pdfUrl: null,
         latexCode: null,
         markdownResume: markdownResume,
+        ...report,
       });
     }
     
